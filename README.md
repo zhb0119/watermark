@@ -8,9 +8,26 @@
   [简体中文](README.md) | [English](README_en.md)
 
   [![Paper](https://img.shields.io/badge/Paper-arXiv-red)](https://arxiv.org/abs/2601.03294)
+  [![Video](https://img.shields.io/badge/Video-Bilibili-%23fb7299?logo=bilibili&logoColor=white)](https://www.bilibili.com/video/BV1VwNFzSEuW/?share_source=copy_web&vd_source=c233de0ad9e4079e7d62230ed368e22e)
   ![Python Version](https://img.shields.io/badge/python-3.9%2B-blue)
   ![License](https://img.shields.io/badge/license-MIT-green)
 </div>
+
+<br>
+
+<div align="center">
+🌟 Star AgentMark on GitHub，及时获取最新发布与更新。
+</div>
+
+<br>
+
+<div align="center">
+  <a href="https://github.com/Tooooa/AgentMark/stargazers">
+    <img src="assets/star.gif" alt="Star AgentMark" width="196" height="52"/>
+  </a>
+</div>
+
+<br>
 
 <div align="center">
   <img src="assets/overview_zh.png" width="75%" alt="AgentMark Overview"/>
@@ -18,8 +35,18 @@
 
 ---
 
-
 **AgentMark** 是一个专注于 **LLM Agent 行为水印** 的实验与评测框架，实现了 **Agent Mark** 论文中提出的效用保持和分布保留水印算法。
+
+### 🎥 视频介绍
+
+**智能体行为难管控？AgentMark提供一套全流程“行为鉴证工具箱”！**
+
+https://github.com/user-attachments/assets/c4e3f2c9-5939-490c-93d1-4b30b47c481e
+
+<br>
+
+如需更高清画质：
+[→ 在 Bilibili 观看体验](https://www.bilibili.com/video/BV1VwNFzSEuW/?share_source=copy_web&vd_source=c233de0ad9e4079e7d62230ed368e22e)
 
 本项目旨在提供一套可复现、模块化且易于扩展的代码库，用于评估水印算法在复杂 Agent 任务中的性能、鲁棒性及隐蔽性。核心机制将 Agent 的决策过程分解为 **规划行为** 和 **执行动作**，通过在规划阶段进行分布保留采样来嵌入水印，从而在不影响下游任务效用的前提下实现可验证的版权保护。
 
@@ -75,20 +102,30 @@
 ---
 
 ## 📖 目录
-- [项目结构](#-项目结构)
-- [快速开始](#-快速开始)
-  - [1. Docker 一键部署（推荐）](#1-docker-一键部署推荐)
-  - [2. 手动环境配置](#2-手动环境配置)
+- [📖 目录](#-目录)
+- [📂 项目结构](#-项目结构)
+- [🚀 快速开始](#-快速开始)
+  - [1. 🐳 Docker 一键部署（推荐）](#1--docker-一键部署推荐)
+  - [2. ⚙️ 手动环境配置](#2-️-手动环境配置)
   - [3. Dashboard 可视化](#3-dashboard-可视化)
+    - [📦 下载检索缓存 (必需)](#-下载检索缓存-必需)
+    - [🚀 启动步骤](#-启动步骤)
   - [4. 插件式一键加水印](#4-插件式一键加水印)
-- [实验指南](#-实验指南)
+    - [Step 1：启动网关代理](#step-1启动网关代理)
+    - [Step 2：验证水印注入](#step-2验证水印注入)
+    - [框架兼容性](#框架兼容性)
+- [📚 实验指南](#-实验指南)
   - [1. ToolBench 工具调用实验](#1-toolbench-工具调用实验)
-  - [2. ALFWorld 具身智能实验](#2-alfworld-具身体能实验)
+    - [📊 数据集准备 (必需)](#-数据集准备-必需)
+    - [🚀 运行模式](#-运行模式)
+  - [2. ALFWorld 具身智能实验](#2-alfworld-具身智能实验)
+    - [📊 数据集准备](#-数据集准备)
+    - [🚀 运行指南](#-运行指南)
   - [3. Oasis 社交媒体实验](#3-oasis-社交媒体实验)
   - [4. RLNC 鲁棒性评测](#4-rlnc-鲁棒性评测)
   - [5. 语义重写鲁棒性评测](#5-语义重写鲁棒性评测)
-- [引用](#-引用)
 - [License](#license)
+- [📄 引用](#-引用)
 ---
 
 ## 📂 项目结构

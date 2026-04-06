@@ -8,9 +8,26 @@
   [简体中文](README.md) | [English](README_en.md)
 
   [![Paper](https://img.shields.io/badge/Paper-arXiv-red)](https://arxiv.org/abs/2601.03294)
+  [![Video](https://img.shields.io/badge/Video-Bilibili-%23fb7299?logo=bilibili&logoColor=white)](https://www.bilibili.com/video/BV1VwNFzSEuW/?share_source=copy_web&vd_source=c233de0ad9e4079e7d62230ed368e22e)
   ![Python Version](https://img.shields.io/badge/python-3.9%2B-blue)
   ![License](https://img.shields.io/badge/license-MIT-green)
 </div>
+
+<br>
+
+<div align="center">
+🌟 Star AgentMark on GitHub and stay instantly updated on new releases.
+</div>
+
+<br>
+
+<div align="center">
+  <a href="https://github.com/Tooooa/AgentMark/stargazers">
+    <img src="assets/star.gif" alt="Star AgentMark" width="196" height="52"/>
+  </a>
+</div>
+
+<br>
 
 <div align="center">
   <img src="assets/overview.png" width="75%" alt="AgentMark Overview"/>
@@ -18,8 +35,18 @@
 
 ---
 
-
 **AgentMark** is an experimental and evaluation framework for **behavioral watermarking of LLM agents**, implementing the utility-preserving and distribution-preserving watermark algorithms proposed in the **Agent Mark** paper.
+
+### 🎥 Demo Video
+
+**AgentMark Full Workflow Behavioral Forensics Toolbox**
+
+https://github.com/user-attachments/assets/c4e3f2c9-5939-490c-93d1-4b30b47c481e
+
+<br>
+
+For higher quality:
+[→ Watch on Bilibili](https://www.bilibili.com/video/BV1VwNFzSEuW/?share_source=copy_web&vd_source=c233de0ad9e4079e7d62230ed368e22e)
 
 The project provides a reproducible, modular, and extensible codebase to evaluate watermark performance, robustness, and stealth in complex agent tasks. It decomposes agent decision-making into **planning behavior** and **execution action**, embedding watermarks at the planning stage via distribution-preserving sampling to maintain downstream utility while enabling verifiable ownership protection.
 
@@ -74,20 +101,30 @@ The project provides a reproducible, modular, and extensible codebase to evaluat
 ---
 
 ## 📖 Table of Contents
-- [Project Structure](#project-structure)
-- [Quick Start](#quick-start)
-  - [1. Docker One-Line Deployment (Recommended)](#1-docker-one-line-deployment-recommended)
-  - [2. Manual Environment Setup](#2-manual-environment-setup)
+- [📖 Table of Contents](#-table-of-contents)
+- [📂 Project Structure](#-project-structure)
+- [🚀 Quick Start](#-quick-start)
+  - [1. 🐳 Docker One-Line Deployment (Recommended)](#1--docker-one-line-deployment-recommended)
+  - [2. ⚙️ Manual Environment Setup](#2-️-manual-environment-setup)
   - [3. Dashboard Visualization](#3-dashboard-visualization)
+    - [📦 Download Retriever Cache (Required)](#-download-retriever-cache-required)
+    - [🚀 Steps](#-steps)
   - [4. Plug-and-Play One-click Watermarking](#4-plug-and-play-one-click-watermarking)
-- [Experiment Guide](#experiment-guide)
+    - [Step 1: Start Gateway Proxy (AgentMark Proxy)](#step-1-start-gateway-proxy-agentmark-proxy)
+    - [Step 2: Verify Watermark Injection](#step-2-verify-watermark-injection)
+    - [Framework Compatibility](#framework-compatibility)
+- [📚 Experiment Guide](#-experiment-guide)
   - [1. ToolBench Tool Calling Experiment](#1-toolbench-tool-calling-experiment)
+    - [📊 Dataset Preparation (Required)](#-dataset-preparation-required)
+    - [🚀 Running Modes](#-running-modes)
   - [2. ALFWorld Embodied Intelligence Experiment](#2-alfworld-embodied-intelligence-experiment)
+    - [📊 Dataset Preparation](#-dataset-preparation)
+    - [🚀 Running Guide](#-running-guide)
   - [3. Oasis Social Media Experiment](#3-oasis-social-media-experiment)
   - [4. RLNC Robustness Evaluation](#4-rlnc-robustness-evaluation)
   - [5. Semantic Rewriting Robustness Evaluation](#5-semantic-rewriting-robustness-evaluation)
-- [Citation](#citation)
 - [License](#license)
+- [📄 Citation](#-citation)
 ---
 
 ## 📂 Project Structure

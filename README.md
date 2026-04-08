@@ -1,7 +1,7 @@
 <div align="center">
   
-  <img src="assets/logo.svg" width="120" alt="AgentMark Logo" style="display: inline-block; vertical-align: middle; margin-right: 20px;"/>
-  <img src="assets/logo-text.svg" width="300" alt="AgentMark" style="display: inline-block; vertical-align: middle;"/>
+  <img src="assets/logo.svg" width="200" alt="AgentMark Logo" style="display: inline-block; vertical-align: middle; margin-right: 20px;"/>
+  <img src="assets/logo-text.svg" width="500" alt="AgentMark" style="display: inline-block; vertical-align: middle;"/>
   
   **LLM Agent 版权保护与溯源水印框架**
 

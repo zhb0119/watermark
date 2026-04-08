@@ -35,7 +35,7 @@
 
 ---
 
-**AgentMark** 是一个专注于 **LLM Agent 行为水印** 的实验与评测框架，实现了 **Agent Mark** 论文中提出的效用保持和分布保留水印算法。
+**AgentMark** 是一个专注于 **LLM Agent 行为水印** 的实验与评测框架，实现了 [**Agent Mark** 论文](https://arxiv.org/abs/2601.03294)中提出的效用保持和分布保留水印算法。
 
 ### 🎥 视频介绍
 

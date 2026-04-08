@@ -35,7 +35,7 @@
 
 ---
 
-**AgentMark** is an experimental and evaluation framework for **behavioral watermarking of LLM agents**, implementing the utility-preserving and distribution-preserving watermark algorithms proposed in the **Agent Mark** paper.
+**AgentMark** is an experimental and evaluation framework for **behavioral watermarking of LLM agents**, implementing the utility-preserving and distribution-preserving watermark algorithms proposed in the [**Agent Mark** paper](https://arxiv.org/abs/2601.03294).
 
 ### 🎥 Demo Video
 

@@ -19,7 +19,7 @@
 | 工作 | watermark 层 | 验证需要的证据 | 能否归因到"无可见行为的 state 改动" |
 |------|-------------|---------------|---------------------------------|
 | AgentMark / Agent Guide | planning / tool / subgoal 决策 | action trajectory | 否 |
-| ActHook | trajectory 中的 hook action | trajectory dataset | 否 |
+| ActHook | trajectory 中的 hook action | trajectory dataset | 否 | 
 | AGENTWM | tool 执行路径等价类 | tool call sequence | 否 |
 | **本项目 (State-Evolution Provenance)** | **memory evolve 决策 (update / link / semantic / merge)** | **memory snapshot + 部分 reveal log** | **是** |
 
@@ -35,13 +35,13 @@
 
 - `Ownership / Provenance (state-level)`
   证明某套长期 memory state 由某个 agent runtime 演化得到，而不只是某段 action 被某个 agent 跑过。
-  ↳ 机制见 §4.2 carrier taxonomy + §7 sampling 算法;验证见 §10.6 (R1/R2/R3 三档,尤其 R3 snapshot-only);量化指标见 §10.2 (bit recovery / decode success / wrong-key acceptance)。
+  ↳ 机制见 §4.2 carrier taxonomy + §7 sampling 算法;验证见 §10.3 RQ1 (R1/R2/R3 三档,尤其 R3 snapshot-only,论文 headline);量化指标见 §10.2 (bit recovery / decode success / wrong-key acceptance)。
 - `Forensics (persistence-layer attribution)`
   在 memory 被复制、二次封装、跨系统迁移后，即便 action trajectory 已不可得，仍能做归因分析。
-  ↳ 关键实验见 §10.6 R3 (snapshot-only verification);威胁面见 §10.5 攻击模型中的 `poisoning / pruning / manual edits` 行。
+  ↳ 关键实验见 §10.3 RQ1 R3 (snapshot-only verification,headline);威胁面见 §10.6 RQ4 攻击模型中的 `poisoning / pruning / manual edits` 行。
 - `Tamper Detection (commitment-bound)`
   当 memory history 被压缩、篡改、重排时，commitment + Merkle log 可独立检测，不依赖 memory system 数据库自身的诚实性。
-  ↳ 机制见 §9 (per-decision commitment + per-session Merkle log + signed root);量化指标见 §10.5 表格中的 `tamper detection rate` 列 (commitment 校验失败率)。
+  ↳ 机制见 §9 (per-decision commitment + per-session Merkle log + signed root);量化指标见 §10.6 RQ4 表格中的 `tamper detection rate` 列 (commitment 校验失败率)。
 
 
 ## 3. 目标场景
@@ -429,7 +429,7 @@ commit_t = H(
 
 `commit_t` 立刻写入下文的 Merkle log,只有它在写入时是 binding 的。原始的 `(C_t, p_t, selected_idx)` 之后存为 `reveal record`,验证时才比对。
 
-↳ **支撑 RQ3 (§10.5)** —— commitment 校验失败率即 §10.5 表格中的 `tamper detection rate` 列,直接对应 `manual edits` 与 `poisoning` 两类攻击的 detection 信号。
+↳ **支撑 RQ4 (§10.6)** —— commitment 校验失败率即 §10.6 表格中的 `tamper detection rate` 列,直接对应 `manual edits` 与 `poisoning` 两类攻击的 detection 信号。
 
 ### 9.2 Per-session Merkle Log
 
@@ -448,7 +448,7 @@ header_T = (agent_id, user_id, session_id, T, root_T, sig_K(root_T))
 
 这样即便 memory system 内部的 history / changelog 被篡改,只要外部 anchor 还在,任何子集 commitments 都可以通过 Merkle proof 被验证属于原始 session。
 
-↳ **支撑 RQ3 (§10.5) 与 RQ4 R2 (§10.6)** —— Merkle proof 是 `compaction / dedup / pruning` 攻击下"任意子集仍可验证"的密码学机制,也是 R2 (Snapshot + Partial Reveal) 在保留比例 `∈ {90%, 70%, …, 10%}` 下能平滑下降而非直接归零的物理基础。
+↳ **支撑 RQ1 R2 (§10.3) 与 RQ4 (§10.6)** —— Merkle proof 是 R2 (Snapshot + Partial Reveal) 在保留比例 `∈ {90%, 70%, …, 10%}` 下能平滑下降而非直接归零的物理基础,同时也是 `compaction / dedup / pruning` 攻击下"任意子集仍可验证"的密码学机制。
 
 ### 9.3 Reveal Record
 
@@ -483,7 +483,7 @@ agentmark-mem-v1::qwen3.5-397b-a17b@<weights-hash>::T_score=0.0::T_enum=0.7::jso
 
 只有以上三步全部通过,该决策才被认为 *"带水印地、可验证地、未被篡改地"* 产生过。
 
-↳ **支撑 RQ1 / RQ2 跨 LLM 实验 (§10.3 / §10.4)** —— `watermark_version` 把 DeepSeek D4 Pro 与 Qwen3.5-397B-A17B 的身份(model id + api-version / weights-hash + 温度 + JSON 模式)一起 hash 进 `commit_t`,任一项变化即 commitment 失配,从而保证 §10.3 utility 对比与 §10.4 capacity 报告在跨 LLM 复现时不会被误读为同一 audit trace。
+↳ **支撑 RQ2 / RQ3 跨 LLM 实验 (§10.4 / §10.5)** —— `watermark_version` 把 DeepSeek D4 Pro 与 Qwen3.5-397B-A17B 的身份(model id + api-version / weights-hash + 温度 + JSON 模式)一起 hash 进 `commit_t`,任一项变化即 commitment 失配,从而保证 §10.4 utility 对比与 §10.5 capacity 报告在跨 LLM 复现时不会被误读为同一 audit trace。
 
 ### 9.4 与 Memory System 自身 history 的关系
 
@@ -493,7 +493,7 @@ agentmark-mem-v1::qwen3.5-397b-a17b@<weights-hash>::T_score=0.0::T_enum=0.7::jso
 - `A-MEM` —— note 的 evolve / link 修改历史
 - `Graphiti` —— temporal graph 的 fact invalidation / supersession 链
 
-它们各自的 history 都只能记录 `ADD / UPDATE / DELETE` 这一类业务事件,**没有密码学性质**。本项目的做法:
+它们各自的 history 都只能记录 `ADD / UPDATE / DELETE` 这一类业务事件,**没有密码学性质**。任何有 DB 写权限的人都能静默改history,改完看不出来。本项目的做法:
 
 - 把 `header_T` 写进各 backend 自身 history 的末端 (in-storage anchor)
 - 把 `reveal_t` 与 memory record 同表/同对象存储 (snapshot-only verification 的关键,见 §10.6)
@@ -501,9 +501,7 @@ agentmark-mem-v1::qwen3.5-397b-a17b@<weights-hash>::T_score=0.0::T_enum=0.7::jso
 
 ↳ **支撑 RQ4 R3 / Headline (§10.6)** —— `reveal_t` 与 `memory record` 同表存储 + `header_T` anchor 写入 snapshot 内,是 "仅凭 memory snapshot 完成 provenance 归因" 在物理层的成立条件。
 
-### 9.5 与 §7 Watermark Sampler 的关系
-
-§7 的 watermark sampler 单独只能保证 *"这次 keyed selection 来自 key K"*,不能保证 *"这条 reveal record 是当时写下的"*。本节描述的 audit trace 把 watermark 的 keyed selection 与 keyed nonce 哈希锁进 commitment,使 watermark 从 runtime-only 的归因机制升级为 lifecycle-survivable 的 provenance 证据。
+§7 的 watermark只能保证 *"这次 keyed selection 来自 key K"*,不能保证 *"这条 reveal record 是当时写下的"*。本节描述的 audit trace 把 watermark 的 keyed selection 与 keyed nonce 哈希锁进 commitment,使 watermark 从 runtime-only 的归因机制升级为 lifecycle-survivable 的 provenance 证据。
 
 ## 10. Experiments
 
@@ -534,25 +532,54 @@ agentmark-mem-v1::qwen3.5-397b-a17b@<weights-hash>::T_score=0.0::T_enum=0.7::jso
 | **Tamper detection** | commitment / Merkle proof 校验失败率 (per-attack,见 §10.5) |
 | **Memory integrity** | update target accuracy, link target accuracy, merge correctness, delete correctness, duplication rate, contradiction rate, stale-memory retention, temporal consistency |
 
-### 10.3 RQ1 — Utility Preservation
+### 10.3 RQ1 — Snapshot-Only / Partial-Log Verification (Headline)
 
-**Question**: watermark 是否破坏 memory system 自身的 utility?
+**Question**: 没有完整 action trajectory 时,仅凭 memory snapshot 能否完成可验证归因?这是 *state-evolution provenance* 与 AgentMark / ActHook 的核心差异点,**整篇论文的 headline 实验**。
+
+**动机**: 在最有取证价值的情形里 —— memory database 被外泄 / 二次封装 / 蒸馏 / 跨系统迁移 —— action trace 通常不可得。这正是 §1 motivation 表格里 *"能否归因到无可见行为的 state 改动"* 一列的承诺。论文先把这件 AgentMark/ActHook 在原理上做不到的事情说清楚,后面 RQ2/RQ3/RQ4 才是支撑性实验(utility / capacity / robustness 必须配合 RQ1 的成立)。
+
+**Verification regime**: 三档逐步降级的证据可得性。
+
+| Regime | 给定的证据 | 适用威胁模型 | 期望性能 |
+|--------|-----------|-------------|---------|
+| `R1: Full` | 完整 reveal log + Merkle tree + memory snapshot | 内部审计 | bit recovery ≈ 1.0,FPR ≈ 0 |
+| `R2: Snapshot + Partial Reveal` | memory snapshot + 部分 reveal record (随机 / 时间窗 / per-carrier 子集) | 部分日志被截断 / 丢失 | bit recovery 随保留比例平滑下降 |
+| `R3: Snapshot Only` | 仅 memory snapshot (无外部 reveal log) | 数据被外泄 / 蒸馏后无 audit | 利用 §9.4 中存于 memory record 旁的 `reveal_t` 残留 + Merkle anchor 反推 |
+
+**R3 可行性依据**: §9.4 已把 `reveal_t` 与 `memory record` 同表 / 同对象存储,且 `header_T` (Merkle root + signature) 写入 snapshot 内的 anchor table。验证流程:
+
+1. 从 snapshot 抽取 `(reveal_t, anchor)` 对
+2. 对每条 reveal,用 PRF key 重放采样器,核对 keyed 中标
+3. 用 anchor 中的 Merkle root 校验 reveal 子集属于原始 session
+4. 聚合所有命中的 keyed 决策,decode bit stream
+
+**Setup**: R1 上跑全量 episode,R2 在 `保留比例 ∈ {90%, 70%, 50%, 30%, 10%}` 下扫,R3 完全去除外部 reveal log,仅依赖 snapshot 内残留。Baseline 包含 `AgentMark @ action layer`,在 R3 下其 bit recovery ≡ 0(by construction),作为 headline 的 *qualitative gap*。
+
+**Expected outcome**: 通用指标 (bit recovery / decode success / FPR / wrong-key acceptance) 套用 §10.2 定义,**不重复列出**。本节只追加一条 R3-specific 指标:
+
+- **carrier-level R3 成功率** —— 四类 carrier 在 snapshot-only 下的 decode 成功率分别报告,用于识别哪些 carrier 在仅有 snapshot 时信号最稳
+
+只要 R3 的 decode 成功率显著高于 wrong-key baseline 且 FPR 可控,即完成 AgentMark / ActHook 在原理上做不到的事情 —— **仅凭 latent state 完成 provenance 归因**。
+
+### 10.4 RQ2 — Utility Preservation
+
+**Question**: watermark 是否破坏 memory system 自身的 utility?(RQ1 的成立前提:provenance 不能以 broken memory 为代价)
 
 **Setup**: 三个 benchmark × 两个 LLM × 三个 backend,各跑 `no-watermark` 与 `+ memory-watermark`,比较 §10.2 中 Utility 列的全部指标。
 
 **Expected outcome**: 在所有 (LLM, backend, benchmark) 组合上,watermark 引入的 utility 下降在统计噪声范围内;retain / recall latency 与 token cost 的相对增幅 ≤ 一个预先声明的阈值(如 5%);memory write 路径无额外失败。
 
-### 10.4 RQ2 — Capacity
+### 10.5 RQ3 — Capacity
 
-**Question**: memory evolve 决策能承载多少 bit?
+**Question**: memory evolve 决策能承载多少 bit?(RQ1 的成立前提:必须有非平凡的 keyed selection 自由度)
 
 **Setup**: 在每个 turn 上记录 candidate-set size `|C_t|` 与分布 entropy `H(p_t)`(见 §4.2.3),以及 sampler 实际嵌入的 `bits_embedded`。按 carrier 分别汇总。
 
-**Expected outcome**: 报告 (i) 每类 carrier 的平均 `|C_t|` 与 `H(p_t)`(理论上界),(ii) 实际 bits per decision / per session / per episode(实际容量),(iii) 每百轮对话平均嵌入 bit 数。
+**Expected outcome**: 报告 (i) 每类 carrier 的平均 `|C_t|` 与 `H(p_t)`(理论上界),(ii) 实际 bits per decision / per session / per episode(实际容量),(iii) 每百轮对话平均嵌入 bit 数。同时回应 reviewer attack *"prompted enumeration ≠ intrinsic decision freedom"*:per-carrier per-backend `H(p_t)` 分布必须显著高于零。
 
-### 10.5 RQ3 — Robustness against Memory-Specific Attacks
+### 10.6 RQ4 — Robustness against Memory-Specific Attacks
 
-**Question**: watermark 在长期记忆系统天然会经历的 lifecycle 操作与定向攻击下是否仍可恢复 / 可检测?
+**Question**: watermark 在长期记忆系统天然会经历的 lifecycle 操作与定向攻击下是否仍可恢复 / 可检测?(RQ1 在真实威胁模型下的延伸)
 
 **Threat model**(对应 §9 cryptographic audit trace):
 
@@ -570,36 +597,6 @@ agentmark-mem-v1::qwen3.5-397b-a17b@<weights-hash>::T_score=0.0::T_enum=0.7::jso
 
 **Expected outcome**: 每类攻击单独报告 (i) 攻击前 / 后 bit recovery rate,(ii) per-session decode success rate,(iii) tamper detection rate (commitment / Merkle proof 校验失败率),(iv) 攻击对 utility 自身的影响(防止 watermark "看起来稳"但 memory 已经坏)。任何无法被 audit trace 检测的攻击 = watermark 漏洞,需在 limitations 中明确。
 
-### 10.6 RQ4 — Snapshot-Only / Partial-Log Verification (Headline)
-
-**Question**: 没有完整 action trajectory 时,仅凭 memory snapshot 能否完成可验证归因?这是 *state-evolution provenance* 与 AgentMark / ActHook 的核心差异点。
-
-**动机**: 在最有取证价值的情形里 —— memory database 被外泄 / 二次封装 / 蒸馏 / 跨系统迁移 —— action trace 通常不可得。这正是 §1 motivation 表格里 *"能否归因到无可见行为的 state 改动"* 一列的承诺。
-
-**Verification regime**: 三档逐步降级的证据可得性。
-
-| Regime | 给定的证据 | 适用威胁模型 | 期望性能 |
-|--------|-----------|-------------|---------|
-| `R1: Full` | 完整 reveal log + Merkle tree + memory snapshot | 内部审计 | bit recovery ≈ 1.0,FPR ≈ 0 |
-| `R2: Snapshot + Partial Reveal` | memory snapshot + 部分 reveal record (随机 / 时间窗 / per-carrier 子集) | 部分日志被截断 / 丢失 | bit recovery 随保留比例平滑下降 |
-| `R3: Snapshot Only` | 仅 memory snapshot (无外部 reveal log) | 数据被外泄 / 蒸馏后无 audit | 利用 §9.4 中存于 memory record 旁的 `reveal_t` 残留 + Merkle anchor 反推 |
-
-**R3 可行性依据**: §9.4 已把 `reveal_t` 与 `memory record` 同表 / 同对象存储,且 `header_T` (Merkle root + signature) 写入 snapshot 内的 anchor table。验证流程:
-
-1. 从 snapshot 抽取 `(reveal_t, anchor)` 对
-2. 对每条 reveal,用 PRF key 重放采样器,核对 keyed 中标
-3. 用 anchor 中的 Merkle root 校验 reveal 子集属于原始 session
-4. 聚合所有命中的 keyed 决策,decode bit stream
-
-**Setup**: R1 上跑全量 episode,R2 在 `保留比例 ∈ {90%, 70%, 50%, 30%, 10%}` 下扫,R3 完全去除外部 reveal log,仅依赖 snapshot 内残留。
-
-**Expected outcome**: 通用指标 (bit recovery / decode success / FPR / wrong-key acceptance) 套用 §10.2 定义,**不重复列出**。本节只追加一条 R3-specific 指标:
-
-- **carrier-level R3 成功率** —— 四类 carrier 在 snapshot-only 下的 decode 成功率分别报告,用于识别哪些 carrier 在仅有 snapshot 时信号最稳
-
-只要 R3 的 decode 成功率显著高于 wrong-key baseline 且 FPR 可控,即完成 AgentMark / ActHook 在原理上做不到的事情 —— **仅凭 latent state 完成 provenance 归因**。
-
-
 ### 10.7 RQ5 — Memory Integrity
 
 **Question**: watermark 是否引入"写错对象 / 错误合并 / 保留过期事实 / 引入脏 memory"?
@@ -608,11 +605,11 @@ agentmark-mem-v1::qwen3.5-397b-a17b@<weights-hash>::T_score=0.0::T_enum=0.7::jso
 
 **Expected outcome**: 所有指标在 watermark 开启后无显著退化。这里的关键是 watermark 不能 "可验证但 memory 写坏"。
 
-### 10.9 RQ6 — Composability with Content Watermark - appendix
+### 10.8 RQ6 — Composability with Content Watermark — appendix
 
 **Question**: memory watermark 与已有 content watermark (LLM 文本水印 / AgentMark action-layer) 同时开启时是否兼容?
 
-**Setup**: 三档配置 —— `memory-only` / `content-only` / `both`,在 §10.6 的 R1 协议下分别跑 utility 与 decode 指标。
+**Setup**: 三档配置 —— `memory-only` / `content-only` / `both`,在 §10.3 的 R1 协议下分别跑 utility 与 decode 指标。
 
 **Expected outcome**: (i) memory decode 不受明显影响,(ii) content watermark 检测能力仍保留,(iii) utility 没有叠加性崩坏。如果两者出现冲突,应在 carrier-level 指出哪种 carrier 与 content watermark 不正交,作为后续工作。
 
@@ -631,9 +628,9 @@ agentmark-mem-v1::qwen3.5-397b-a17b@<weights-hash>::T_score=0.0::T_enum=0.7::jso
 
 ## 12. 参考资料
 
-- AgentMark 论文 PDF： [2601.03294v2.pdf](</Users/henry_mao/Desktop/2601.03294v2.pdf>)
-- AgentMark 代码说明： [README_en.md](/Users/henry_mao/AgentMark/README_en.md:38)
-- AgentMark 采样器： [agentmark/core/watermark_sampler.py](/Users/henry_mao/AgentMark/agentmark/core/watermark_sampler.py:16)
+- AgentMark 论文 PDF： [2601.03294v2.pdf]
+- AgentMark 代码说明： [README_en.md]
+- AgentMark 采样器： [agentmark/core/watermark_sampler.py]
 - OpenClaw 官方仓库： https://github.com/openclaw/openclaw
 - Cognee： https://github.com/topoteretes/cognee
 - A-MEM： https://arxiv.org/abs/2502.12110

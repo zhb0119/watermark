@@ -502,6 +502,10 @@ agentmark-mem-v1::qwen3.5-397b-a17b@<weights-hash>::T_score=0.0::T_enum=0.7::jso
 
 ↳ **支撑 RQ4 R3 / Headline (§10.6)** —— `reveal_t` 与 `memory record` 同表存储 + `header_T` anchor 写入 snapshot 内,是 "仅凭 memory snapshot 完成 provenance 归因" 在物理层的成立条件。
 
+### 9.5 与 §7 Watermark Sampler 的关系
+
+§7 的 watermark sampler 单独只能保证 *"这次 keyed selection 来自 key K"*,不能保证 *"这条 reveal record 是当时写下的"*。本节描述的 audit trace 把 watermark 的 keyed selection 与 keyed nonce 哈希锁进 commitment,使 watermark 从 runtime-only 的归因机制升级为 lifecycle-survivable 的 provenance 证据。
+
 ## 10. Experiments
 
 本章按论文 Results section 的结构组织。每个研究问题(RQ)对应一个独立的实验 block,统一遵循 §10.1 的 setup 与 §10.2 的指标定义。

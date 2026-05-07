@@ -220,17 +220,7 @@ watermark sampler 只看 `(C_t, p_t)`,因此论文里可以独立报告每类 ca
 - 一个可枚举的候选选择空间
 - 一个可记录的 audit trace
 
-本项目**不引入额外的 agent harness**。三种 backend 自带 SDK 与生命周期:
-
-- `Cognee` —— `cognee.add()` / `cognee.search()` 入口,内置 dataset / session 概念
-- `A-MEM` —— `AMem.add_note()` / `AMem.update_note()`,note 演化路径已显式
-- `Graphiti` —— `Graphiti.add_episode()` / fact invalidation API,temporal 边的写入是显式生命周期点
-
-由于 evolve 决策都在 backend 自身已暴露的 native write API 上,我们只需在 *每个 backend native API 入口处* 加一层薄 wrapper,在写入前调 §4.2.3 的 adapter 接口生成 `(C_t, p_t, ctx_t)`,在写入后落 §9 的 audit trace。这一层就是 `agentmark/sdk/memory_hook.py`,每个 backend 一个 ~50–100 行的 wrapper 子类,共 ~200–300 行新代码。
-
-LoCoMo / LongMemEval / MemoryAgentBench 三个 benchmark 各自的 evaluation harness(`session replay` / `incremental multi-turn driver`)直接驱动被 wrap 过的 backend native API,无需额外 harness 协调 session / agent 边界 —— benchmark 自己已经定义这些边界。
-
-这种设计的副作用是 §4.2.3 的 backend-invariant adapter 抽象**反而更显著**:没有外部 harness 帮忙,所有 backend-invariant 的逻辑就只剩 `(C_t, p_t, ctx_t)` 三元组接口。
+本项目**不引入额外的 agent harness**。`Cognee` / `A-MEM` / `Graphiti` 各自的官方仓库都已经文档化了"如何接入 LLM、跑 LoCoMo / LongMemEval / MemoryAgentBench 的 evaluation"这条端到端路径,我们直接复用各自原生的 LLM 接入与 benchmark 评测脚本,不需要再写一层协调层。watermark 仅在 backend 已经暴露的 evolve 入口挂上 §4.2.3 的 adapter 与 §9 的 audit trace,改动量限制在 backend 自身的 native API wrapper 上。
 
 ## 6. Benchmark 设计
 

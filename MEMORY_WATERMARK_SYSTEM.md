@@ -352,29 +352,17 @@ MemoryAgentBench 官方信息：
 
 ## 7. 核心算法
 
+**watermark 嵌入机制直接复用 AgentMark**,不引入新的 sampling 算法。
 
-核心思想：
+具体地,每次 §4.2.3 adapter 在一个 evolve 决策点产出三元组 `(C_t, p_t, ctx_t)` 后,直接调用 AgentMark 的 sampler:
 
-- 不直接改写最终输出文本
-- 在“候选行为分布”上做 distribution-preserving sampling
-- 用上下文绑定的 secret-keyed randomness 选择一个候选
-- 后续验证端在相同上下文下可重建并解码
+- [agentmark/sdk/watermarker.py](/Users/henry_mao/AgentMark/agentmark/sdk/watermarker.py:48) —— `AgentWatermarker.sample(probabilities, context, ...)`
+- [agentmark/core/watermark_sampler.py](/Users/henry_mao/AgentMark/agentmark/core/watermark_sampler.py:16) —— distribution-preserving binning + DRBG-driven keyed selection
+- [README_en.md](/Users/henry_mao/AgentMark/README_en.md:38) —— 算法细节与 capacity / utility 分析
 
-本地参考：
+- **输入端**(§4.2 / §4.2.3) —— 把 memory evolve 决策抽象成 sampler 能消费的 `(C_t, p_t, ctx_t)`
+- **输出端**(§9) —— 把 sampler 的 keyed selection 锁进 commitment + Merkle log,使 watermark 从 runtime-only 的归因机制升级为 lifecycle-survivable 的 provenance 证据(详见 §9.5)
 
-- [agentmark/sdk/watermarker.py](/Users/henry_mao/AgentMark/agentmark/sdk/watermarker.py:48)
-- [agentmark/core/watermark_sampler.py](/Users/henry_mao/AgentMark/agentmark/core/watermark_sampler.py:16)
-- [README_en.md](/Users/henry_mao/AgentMark/README_en.md:38)
-
-
-1. 当前 turn 到来
-2. recall 相关 memories
-3. LLM 生成多个“可接受的 memory evolve candidates”
-4. 为每个 candidate 分配分数或概率
-5. 在该分布上做 watermark sampling
-6. 选中的 candidate 交给memory system执行
-7. 保存 history 和 audit trace
-8. 验证端用相同上下文重建并解码 bitstream
 
 ## 8. Memory Watermark 的输入与上下文
 

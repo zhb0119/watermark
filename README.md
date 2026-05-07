@@ -540,8 +540,6 @@ agentmark-mem-v1::qwen3.5-397b-a17b@<weights-hash>::T_score=0.0::T_enum=0.7::jso
 | `R2: Partial External Log` | memory snapshot + 部分外部 reveal record(随机 / 时间窗 / per-carrier 子集) | 外部日志被截断 / 丢失 | bit recovery 随外部保留比例平滑下降 |
 | **`R3: In-Record Provenance Verification (Headline)`** | 仅 memory snapshot,无任何外部 reveal log;依赖 §9.4 中**存于 memory record 内 sidecar 的 `reveal_t` 残留** + snapshot 内 anchor table 的 `header_T` | 数据被外泄 / 蒸馏 / 跨系统迁移后,外部 audit store 不可得 | bit recovery 显著高于 wrong-key baseline,FPR ≤ 0.01 |
 
-> **R3 命名重要说明**: 严格地讲,R3 不是 "no log at all" —— `reveal_t` 没有消失,只是从外部 audit store 移到 memory record 内 sidecar。这就是 *In-Record Provenance Verification* 这个名字的含义:验证不依赖外部 log,但 in-record sidecar 仍然存在。**真正完全无 log 的 R4 ablation 见 §10.5.x**。
-
 **R3 可行性依据**: §9.4 已把 `reveal_t` 与 `memory record` 同表 / 同对象存储,且 `header_T` (Merkle root + signature) 写入 snapshot 内的 anchor table。验证流程:
 
 1. 从 snapshot 抽取 `(reveal_t, anchor)` 对

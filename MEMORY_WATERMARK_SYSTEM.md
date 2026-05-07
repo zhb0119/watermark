@@ -38,12 +38,11 @@
   ↳ 机制见 §4.2 carrier taxonomy + §7 sampling 算法;验证见 §10.6 (R1/R2/R3 三档,尤其 R3 snapshot-only);量化指标见 §10.2 (bit recovery / decode success / wrong-key acceptance)。
 - `Forensics (persistence-layer attribution)`
   在 memory 被复制、二次封装、跨系统迁移后，即便 action trajectory 已不可得，仍能做归因分析。
-  ↳ 关键实验见 §10.6 R3 (snapshot-only verification,这是 AgentMark / ActHook 在原理上做不到的);威胁面见 §10.5 攻击模型中的 `poisoning / pruning / manual edits` 行。
+  ↳ 关键实验见 §10.6 R3 (snapshot-only verification);威胁面见 §10.5 攻击模型中的 `poisoning / pruning / manual edits` 行。
 - `Tamper Detection (commitment-bound)`
   当 memory history 被压缩、篡改、重排时，commitment + Merkle log 可独立检测，不依赖 memory system 数据库自身的诚实性。
   ↳ 机制见 §9 (per-decision commitment + per-session Merkle log + signed root);量化指标见 §10.5 表格中的 `tamper detection rate` 列 (commitment 校验失败率)。
-- `Research Benchmarking`
-  研究 memory watermark 对长期记忆质量、检索效果、QA 能力的影响。
+-  研究 memory watermark 对长期记忆质量、检索效果、QA 能力的影响。
   ↳ benchmark 套件见 §6 (LoCoMo / LongMemEval / MemoryAgentBench);utility 指标见 §10.2 + §10.3。
 
 ## 3. 目标场景
@@ -431,6 +430,8 @@ commit_t = H(
 
 `commit_t` 立刻写入下文的 Merkle log,只有它在写入时是 binding 的。原始的 `(C_t, p_t, selected_idx)` 之后存为 `reveal record`,验证时才比对。
 
+↳ **支撑 RQ3 (§10.5)** —— commitment 校验失败率即 §10.5 表格中的 `tamper detection rate` 列,直接对应 `manual edits` 与 `poisoning` 两类攻击的 detection 信号。
+
 ### 9.2 Per-session Merkle Log
 
 每个 session 维护一棵 Merkle tree:
@@ -447,6 +448,8 @@ header_T = (agent_id, user_id, session_id, T, root_T, sig_K(root_T))
 - 周期性外发到独立 audit store (S3 + object lock / transparency log)
 
 这样即便 memory system 内部的 history / changelog 被篡改,只要外部 anchor 还在,任何子集 commitments 都可以通过 Merkle proof 被验证属于原始 session。
+
+↳ **支撑 RQ3 (§10.5) 与 RQ4 R2 (§10.6)** —— Merkle proof 是 `compaction / dedup / pruning` 攻击下"任意子集仍可验证"的密码学机制,也是 R2 (Snapshot + Partial Reveal) 在保留比例 `∈ {90%, 70%, …, 10%}` 下能平滑下降而非直接归零的物理基础。
 
 ### 9.3 Reveal Record
 
@@ -481,6 +484,8 @@ agentmark-mem-v1::qwen3.5-397b-a17b@<weights-hash>::T_score=0.0::T_enum=0.7::jso
 
 只有以上三步全部通过,该决策才被认为 *"带水印地、可验证地、未被篡改地"* 产生过。
 
+↳ **支撑 RQ1 / RQ2 跨 LLM 实验 (§10.3 / §10.4)** —— `watermark_version` 把 DeepSeek D4 Pro 与 Qwen3.5-397B-A17B 的身份(model id + api-version / weights-hash + 温度 + JSON 模式)一起 hash 进 `commit_t`,任一项变化即 commitment 失配,从而保证 §10.3 utility 对比与 §10.4 capacity 报告在跨 LLM 复现时不会被误读为同一 audit trace。
+
 ### 9.4 与 Memory System 自身 history 的关系
 
 三种 memory system 都有不同形式的内置 changelog:
@@ -494,6 +499,8 @@ agentmark-mem-v1::qwen3.5-397b-a17b@<weights-hash>::T_score=0.0::T_enum=0.7::jso
 - 把 `header_T` 写进各 backend 自身 history 的末端 (in-storage anchor)
 - 把 `reveal_t` 与 memory record 同表/同对象存储 (snapshot-only verification 的关键,见 §10.6)
 - 验证端不再依赖任何 memory system 数据库的诚实性,只依赖外部 anchor 与 PRF key
+
+↳ **支撑 RQ4 R3 / Headline (§10.6)** —— `reveal_t` 与 `memory record` 同表存储 + `header_T` anchor 写入 snapshot 内,是 "仅凭 memory snapshot 完成 provenance 归因" 在物理层的成立条件。
 
 ## 10. Experiments
 
@@ -511,7 +518,6 @@ agentmark-mem-v1::qwen3.5-397b-a17b@<weights-hash>::T_score=0.0::T_enum=0.7::jso
 - **Baselines**:
   - `no-watermark` —— 不嵌水印,只跑 backend + harness,用于上界 utility
   - `random-replace` —— 同样在 evolve 决策点随机替换候选,无密钥,用于测 FPR / wrong-key 下界
-  - `AgentMark (action-layer)` —— 在 OpenClaw 暴露的 tool / planning 决策上跑 AgentMark,用于对照 *action-layer vs state-evolution* 两种 watermark 的覆盖差异
 - **Protocol**: 每个 (backend × LLM × benchmark) 组合跑 ≥ 3 个 seed;evolve 决策与 audit trace 同时落盘 (§9);所有指标在 episode 级别计算,均值 + 标准差。
 
 ### 10.2 Evaluation Metrics
@@ -539,7 +545,7 @@ agentmark-mem-v1::qwen3.5-397b-a17b@<weights-hash>::T_score=0.0::T_enum=0.7::jso
 
 **Setup**: 在每个 turn 上记录 candidate-set size `|C_t|` 与分布 entropy `H(p_t)`(见 §4.2.3),以及 sampler 实际嵌入的 `bits_embedded`。按 carrier 分别汇总。
 
-**Expected outcome**: 报告 (i) 每类 carrier 的平均 `|C_t|` 与 `H(p_t)`(理论上界),(ii) 实际 bits per decision / per session / per episode(实际容量),(iii) 每百轮对话平均嵌入 bit 数;并对比 AgentMark action-layer 在同一轨迹上的容量,验证 memory carrier 的容量并不显著低于 action carrier。
+**Expected outcome**: 报告 (i) 每类 carrier 的平均 `|C_t|` 与 `H(p_t)`(理论上界),(ii) 实际 bits per decision / per session / per episode(实际容量),(iii) 每百轮对话平均嵌入 bit 数。
 
 ### 10.5 RQ3 — Robustness against Memory-Specific Attacks
 

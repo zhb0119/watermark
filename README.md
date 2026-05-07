@@ -184,12 +184,10 @@ watermark sampler 只看 `(C_t, p_t)`,因此论文里可以独立报告每类 ca
   - **DeepSeek v4 Pro** —— headline + cost 主线,与 `agentmark/proxy/server.py` 现有 DeepSeek 路径无缝衔接
   - **Qwen3.5-397B-A17B** —— reproducibility + open-weights 主线,确保 audit trace 可被独立重放
   调用形态均为 OpenAI-compatible API。候选枚举阶段 `T=0.7`,scoring 阶段 `T=0.0`,统一开 JSON 模式以对齐 `agentmark/sdk/prompt_adapter.py` 的 `action_weights` 协议。
-- `Agent harness`
-  管理 turn、session、agent identity、hooks。
 - `Memory system`
-  负责实际写入与检索，如 `Cognee`、`A-MEM`、`Graphiti`。
+  负责实际写入与检索,如 `Cognee` / `A-MEM` / `Graphiti`。turn / session / agent identity / hooks 全由 backend 自身的 SDK 与 benchmark evaluation harness 协同提供,本项目不再额外引入 agent harness。
 - `Watermark selector`
-  用私钥控制的采样器，在候选中做可验证选择，`AgentMark`。
+  用私钥控制的采样器,在候选中做可验证选择,`AgentMark`。
 - `Audit store`
   记录可验证 trace。
 

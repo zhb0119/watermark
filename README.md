@@ -220,7 +220,7 @@ watermark sampler 只看 `(C_t, p_t)`,因此论文里可以独立报告每类 ca
 - 一个可枚举的候选选择空间
 - 一个可记录的 audit trace
 
-本项目**不引入额外的 agent harness**。`Cognee` / `A-MEM` / `Graphiti` 各自的官方仓库都已经文档化了"如何接入 LLM、跑 LoCoMo / LongMemEval / MemoryAgentBench 的 evaluation"这条端到端路径,我们直接复用各自原生的 LLM 接入与 benchmark 评测脚本,不需要再写一层协调层。watermark 仅在 backend 已经暴露的 evolve 入口挂上 §4.2.3 的 adapter 与 §9 的 audit trace,改动量限制在 backend 自身的 native API wrapper 上。
+`Cognee` / `A-MEM` / `Graphiti` 各自的官方仓库都已经文档化了"如何接入 LLM、跑 LoCoMo / LongMemEval / MemoryAgentBench 的 evaluation"这条端到端路径,我们直接复用各自原生的 LLM 接入与 benchmark 评测脚本,不需要再写一层协调层。watermark 仅在 backend 已经暴露的 evolve 入口挂上 §4.2.3 的 adapter 与 §9 的 audit trace,改动量限制在 backend 自身的 native API wrapper 上。
 
 ## 6. Benchmark 设计
 

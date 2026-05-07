@@ -42,8 +42,7 @@
 - `Tamper Detection (commitment-bound)`
   当 memory history 被压缩、篡改、重排时，commitment + Merkle log 可独立检测，不依赖 memory system 数据库自身的诚实性。
   ↳ 机制见 §9 (per-decision commitment + per-session Merkle log + signed root);量化指标见 §10.5 表格中的 `tamper detection rate` 列 (commitment 校验失败率)。
--  研究 memory watermark 对长期记忆质量、检索效果、QA 能力的影响。
-  ↳ benchmark 套件见 §6 (LoCoMo / LongMemEval / MemoryAgentBench);utility 指标见 §10.2 + §10.3。
+
 
 ## 3. 目标场景
 

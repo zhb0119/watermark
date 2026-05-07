@@ -48,3 +48,14 @@ experiments/**/data/
 experiments/**/output/
 experiments/toolbench/data/
 temp_alfworld_data/
+
+# Third-party research repos cloned for memory-watermark experiments.
+# Each is its own upstream repo — see SETUP.md for clone commands.
+A-mem/
+MemoryAgentBench/
+cognee/
+graphiti/
+letta/
+locomo/
+mem0/
+Auto-claude-code-research-in-sleep/

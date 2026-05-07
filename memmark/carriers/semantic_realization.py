@@ -1,15 +1,24 @@
 from __future__ import annotations
 
 import hashlib
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from memmark.core.types import Candidate, MemoryEvent
 
 
-class SemanticVariantCarrier:
-    carrier_type = "semantic_variant"
+class SemanticRealizationCarrier:
+    """Carrier τ = semantic_realization: pick a paraphrase of the same fact.
 
-    def generate_candidates(self, event: MemoryEvent, memory_snapshot: Any) -> List[Candidate]:
+    The candidate set is a list of semantically equivalent rewrites of the
+    incoming memory event, all preserving the same durable fact. Watermark
+    bits are embedded by which rewrite is chosen.
+    """
+
+    carrier_type = "semantic_realization"
+
+    def generate_candidates(
+        self, event: MemoryEvent, memory_snapshot: Any
+    ) -> List[Candidate]:
         base = event.text.strip()
         variants = [
             base,
@@ -33,7 +42,7 @@ class SemanticVariantCarrier:
 
     def score_candidates(self, candidates: List[Candidate]) -> Dict[str, float]:
         weights = [0.40, 0.35, 0.25]
-        scores = {}
+        scores: Dict[str, float] = {}
         for idx, candidate in enumerate(candidates):
             scores[candidate.candidate_id] = weights[idx] if idx < len(weights) else 0.10
         total = sum(scores.values())
@@ -42,4 +51,8 @@ class SemanticVariantCarrier:
     @staticmethod
     def _candidate_id(event_id: str, idx: int, text: str) -> str:
         digest = hashlib.sha256(f"{event_id}|{idx}|{text}".encode("utf-8")).hexdigest()[:10]
-        return f"sv_{idx}_{digest}"
+        return f"sr_{idx}_{digest}"
+
+
+# Backwards-compat alias for code that still imports the old class name.
+SemanticVariantCarrier = SemanticRealizationCarrier

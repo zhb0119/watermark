@@ -17,9 +17,6 @@ git clone https://github.com/letta-ai/letta.git               # Letta (optional 
 git clone https://github.com/snap-research/locomo.git              # LoCoMo
 git clone https://github.com/xiaowu0162/LongMemEval.git            # LongMemEval
 git clone https://github.com/HUST-AI-HYZ/MemoryAgentBench.git      # MemoryAgentBench (ICLR 2026)
-
-# Agent harness
-git clone https://github.com/openclaw/openclaw.git            # OpenClaw
 ```
 
 ## Versions used (for reproducibility)

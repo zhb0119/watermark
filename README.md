@@ -220,21 +220,17 @@ watermark sampler 只看 `(C_t, p_t)`,因此论文里可以独立报告每类 ca
 - 一个可枚举的候选选择空间
 - 一个可记录的 audit trace
 
-为了在三种 memory system 上一致地观测 evolve 生命周期，系统形态上需要一个 thin agent harness，提供：
+本项目**不引入额外的 agent harness**。三种 backend 自带 SDK 与生命周期:
 
-- session / agent 边界
-- memory evolve 的 before / after hooks
-- recall / capture 生命周期
-- per-agent isolation
-- 可插拔的 memory backend 接口 (统一对接 Cognee / A-MEM / Graphiti)
+- `Cognee` —— `cognee.add()` / `cognee.search()` 入口,内置 dataset / session 概念
+- `A-MEM` —— `AMem.add_note()` / `AMem.update_note()`,note 演化路径已显式
+- `Graphiti` —— `Graphiti.add_episode()` / fact invalidation API,temporal 边的写入是显式生命周期点
 
-本项目使用 **OpenClaw** 作为 agent harness。原因是它原生具备上述五个能力 —— session/agent 边界、before/after hooks、recall/capture 生命周期、per-agent isolation、memory plugin 接口 —— 因此可以在不动 Cognee / A-MEM / Graphiti 源码的前提下,把 watermark sampler 挂在 OpenClaw 的 hooks 上。
+由于 evolve 决策都在 backend 自身已暴露的 native write API 上,我们只需在 *每个 backend native API 入口处* 加一层薄 wrapper,在写入前调 §4.2.3 的 adapter 接口生成 `(C_t, p_t, ctx_t)`,在写入后落 §9 的 audit trace。这一层就是 `agentmark/sdk/memory_hook.py`,每个 backend 一个 ~50–100 行的 wrapper 子类,共 ~200–300 行新代码。
 
-`Cognee` / `A-MEM` / `Graphiti` 这三种 memory system 自身都有各自的写入 API,本项目通过 OpenClaw 的 plugin 接口把它们抽象成 §4.2.3 的最小 adapter,所有 watermark 逻辑只挂在 OpenClaw hooks 上,不修改 backend 源码。
+LoCoMo / LongMemEval / MemoryAgentBench 三个 benchmark 各自的 evaluation harness(`session replay` / `incremental multi-turn driver`)直接驱动被 wrap 过的 backend native API,无需额外 harness 协调 session / agent 边界 —— benchmark 自己已经定义这些边界。
 
-参考:
-
-- OpenClaw 官方仓库: https://github.com/openclaw/openclaw
+这种设计的副作用是 §4.2.3 的 backend-invariant adapter 抽象**反而更显著**:没有外部 harness 帮忙,所有 backend-invariant 的逻辑就只剩 `(C_t, p_t, ctx_t)` 三元组接口。
 
 ## 6. Benchmark 设计
 
@@ -497,8 +493,8 @@ agentmark-mem-v1::qwen3.5-397b-a17b@<weights-hash>::T_score=0.0::T_enum=0.7::jso
 
 ### 10.1 Experimental Setup
 
-- **Memory backends**: `Cognee` (KG / triplet store) / `A-MEM` (agentic notes) / `Graphiti` (temporal graph)。每个 backend 通过 §4.2.3 的最小 adapter 接入,backend 源码不修改。
-- **Agent harness**: OpenClaw (https://github.com/openclaw/openclaw),提供 session / hook / per-agent isolation。
+- **Memory backends**: `Cognee` (KG / triplet store) / `A-MEM` (agentic notes) / `Graphiti` (temporal graph)。每个 backend 通过 §4.2.3 的最小 adapter + §5 中描述的 ~50–100 行 native-API wrapper 接入,backend 源码不修改;不引入外部 agent harness。
+- **Benchmark drivers**: 每个 benchmark 自带的 evaluation harness 直接驱动被 wrap 过的 backend native API —— LoCoMo session replay / LongMemEval `_S` 评测脚本 / MemoryAgentBench incremental multi-turn driver。
 - **LLMs**: 固定两个,见 §5。
   - `DeepSeek v4 Pro` —— headline + cost 主线
   - `Qwen3.5-397B-A17B` —— reproducibility + open-weights 主线
@@ -606,8 +602,7 @@ agentmark-mem-v1::qwen3.5-397b-a17b@<weights-hash>::T_score=0.0::T_enum=0.7::jso
 
 这个系统本质上是在做 **state-evolution provenance**：
 
-- 用 `OpenClaw` 作为 agent harness,提供统一的 session / hook / per-agent isolation,在不改 backend 的前提下接管 evolve 生命周期
-- 在 `Cognee / A-MEM / Graphiti` 三种结构不同的 memory system 上，统一抽象出 backend-invariant 的 evolve carrier taxonomy (update / link / semantic / merge)
+- 在 `Cognee / A-MEM / Graphiti` 三种结构不同的 memory system 上，统一抽象出 backend-invariant 的 evolve carrier taxonomy (update / link / semantic / merge),仅靠 ~200–300 行的 backend native API wrapper 接入,不引入外部 harness
 - 用 `AgentMark` 风格的 distribution-preserving sampling 把 watermark 嵌入 *latent state-transition* 决策
 - 用 commitment + Merkle log 的 cryptographic audit trace 替代普通 JSON log,实现 tamper-evident、partial-verifiable 的归因
 - 用 `LoCoMo + LongMemEval + MemoryAgentBench` 
@@ -619,7 +614,6 @@ agentmark-mem-v1::qwen3.5-397b-a17b@<weights-hash>::T_score=0.0::T_enum=0.7::jso
 - AgentMark 论文 PDF： [2601.03294v2.pdf]
 - AgentMark 代码说明： [README_en.md]
 - AgentMark 采样器： [agentmark/core/watermark_sampler.py]
-- OpenClaw 官方仓库： https://github.com/openclaw/openclaw
 - Cognee： https://github.com/topoteretes/cognee
 - A-MEM： https://arxiv.org/abs/2502.12110
 - Graphiti： https://github.com/getzep/graphiti

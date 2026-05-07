@@ -32,7 +32,7 @@
 
 ## 2. 为什么要做这个 Watermark
 
-核心价值有四类，每一类都和 state-evolution provenance 这条主线对齐：
+核心价值有三类，每一类都和 state-evolution provenance 这条主线对齐：
 
 - `Ownership / Provenance (state-level)`
   证明某套长期 memory state 由某个 agent runtime 演化得到，而不只是某段 action 被某个 agent 跑过。

@@ -180,7 +180,7 @@ watermark sampler 只看 `(C_t, p_t)`,因此论文里可以独立报告每类 ca
 
 - `LLM`
   生成 memory 候选及其概率。本项目固定使用两个 LLM:
-  - **DeepSeek D4 Pro** —— headline + cost 主线,与 `agentmark/proxy/server.py` 现有 DeepSeek 路径无缝衔接
+  - **DeepSeek v4 Pro** —— headline + cost 主线,与 `agentmark/proxy/server.py` 现有 DeepSeek 路径无缝衔接
   - **Qwen3.5-397B-A17B** —— reproducibility + open-weights 主线,确保 audit trace 可被独立重放
   调用形态均为 OpenAI-compatible API。候选枚举阶段 `T=0.7`,scoring 阶段 `T=0.0`,统一开 JSON 模式以对齐 `agentmark/sdk/prompt_adapter.py` 的 `action_weights` 协议。
 - `Agent harness`
@@ -457,7 +457,7 @@ reveal_t = {
 `watermark_version` 必须把 LLM 身份完整记录,否则换模型重放就过不了 verification。本项目的两个固定取值:
 
 ```text
-agentmark-mem-v1::deepseek-d4-pro@<api-version>::T_score=0.0::T_enum=0.7::json_mode=true
+agentmark-mem-v1::deepseek-v4-pro@<api-version>::T_score=0.0::T_enum=0.7::json_mode=true
 agentmark-mem-v1::qwen3.5-397b-a17b@<weights-hash>::T_score=0.0::T_enum=0.7::json_mode=true
 ```
 
@@ -471,7 +471,7 @@ agentmark-mem-v1::qwen3.5-397b-a17b@<weights-hash>::T_score=0.0::T_enum=0.7::jso
 
 只有以上三步全部通过,该决策才被认为 *"带水印地、可验证地、未被篡改地"* 产生过。
 
-↳ **支撑 RQ2 / RQ3 跨 LLM 实验 (§10.4 / §10.5)** —— `watermark_version` 把 DeepSeek D4 Pro 与 Qwen3.5-397B-A17B 的身份(model id + api-version / weights-hash + 温度 + JSON 模式)一起 hash 进 `commit_t`,任一项变化即 commitment 失配,从而保证 §10.4 utility 对比与 §10.5 capacity 报告在跨 LLM 复现时不会被误读为同一 audit trace。
+↳ **支撑 RQ2 / RQ3 跨 LLM 实验 (§10.4 / §10.5)** —— `watermark_version` 把 DeepSeek v4 Pro 与 Qwen3.5-397B-A17B 的身份(model id + api-version / weights-hash + 温度 + JSON 模式)一起 hash 进 `commit_t`,任一项变化即 commitment 失配,从而保证 §10.4 utility 对比与 §10.5 capacity 报告在跨 LLM 复现时不会被误读为同一 audit trace。
 
 ### 9.4 与 Memory System 自身 history 的关系
 
@@ -500,7 +500,7 @@ agentmark-mem-v1::qwen3.5-397b-a17b@<weights-hash>::T_score=0.0::T_enum=0.7::jso
 - **Memory backends**: `Cognee` (KG / triplet store) / `A-MEM` (agentic notes) / `Graphiti` (temporal graph)。每个 backend 通过 §4.2.3 的最小 adapter 接入,backend 源码不修改。
 - **Agent harness**: OpenClaw (https://github.com/openclaw/openclaw),提供 session / hook / per-agent isolation。
 - **LLMs**: 固定两个,见 §5。
-  - `DeepSeek D4 Pro` —— headline + cost 主线
+  - `DeepSeek v4 Pro` —— headline + cost 主线
   - `Qwen3.5-397B-A17B` —— reproducibility + open-weights 主线
   调用形态 OpenAI-compatible,候选枚举 `T_enum = 0.7`,scoring `T_score = 0.0`,JSON 模式开启。
 - **Benchmarks**: `LoCoMo` / `LongMemEval` / `MemoryAgentBench` (见 §6.2)。

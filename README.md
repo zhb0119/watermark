@@ -1,17 +1,17 @@
-# MemMark: State-Evolution Provenance Watermarking for Long-Term Agent Memory Systems
+# MemMark: State-Evolution Attribution Watermarking for Long-Term Agent Memory Systems
 
 
-## 1. 背景与 Motivation —— State-Evolution Provenance
+## 1. 背景与 Motivation —— State-Evolution Attribution
 
 长期记忆 agent 会把用户对话、偏好、项目状态、规则、决策过程持续写入 memory。问题在于：
 
 - 这些 memory 是 agent 核心能力的一部分，但目前很难证明"某段长期记忆轨迹是某个特定 agent 系统生成的"。
 - 普通日志只能证明"发生过一次写入"，不能证明"这次写入来自带私钥控制的特定系统"。
-- 在 memory 被导出、迁移、蒸馏、复用甚至被第三方挪用后，缺少 provenance 机制。
+- 在 memory 被导出、迁移、蒸馏、复用甚至被第三方挪用后，缺少 attribution 机制。
 
 本项目的 **核心 claim 是:
 
-> **State-Evolution Provenance** —— 在 agent 的 *latent long-term state* 演化过程中嵌入可验证水印,
+> **State-Evolution Attribution** —— 在 agent 的 *latent long-term state* 演化过程中嵌入可验证水印,
 > 让我们能回答 "*who changed the long-term state*",
 > 即便这次改动 **没有产生任何可见的 action 或 tool call**。
 
@@ -22,7 +22,7 @@
 | AgentMark / Agent Guide | planning / tool / subgoal 决策 | action trajectory | as published 不可,因为 trajectory 在外泄场景下被丢弃 |
 | ActHook | trajectory 中的 hook action | trajectory dataset | as published 不可 |
 | AGENTWM | tool 执行路径等价类 | tool call sequence | as published 不可 |
-| **本项目 (State-Evolution Provenance)** | **memory evolve 决策 (update / link / semantic)** | **memory snapshot 内的 in-record reveal residue + Merkle anchor** | **是(In-Record Provenance Verification)** |
+| **本项目 (State-Evolution Attribution)** | **memory evolve 决策 (update / link / semantic)** | **memory snapshot 内的 in-record reveal residue + Merkle anchor** | **是(In-Record Attribution Verification)** |
 
 注: 上表的 *能否归因* 列说的是 "as published" 设定,不是原理性 impossibility —— AgentMark / ActHook / AGENTWM 都假设 verifier 拿到 action trajectory,而在 forensic 场景里 trajectory 通常已被丢弃。MemMark 把验证证据从外部 action trace 转移到 *memory record 自身携带的 reveal residue*,这是工程层面的差异,不是 cryptographic impossibility 论证。
 
@@ -34,9 +34,9 @@
 
 ## 2. 为什么要做这个 Watermark
 
-核心价值有三类，每一类都和 state-evolution provenance 这条主线对齐：
+核心价值有三类，每一类都和 state-evolution attribution 这条主线对齐：
 
-- `Ownership / Provenance (state-level)`
+- `Ownership / Attribution (state-level)`
   证明某套长期 memory state 由某个 agent runtime 演化得到，而不只是某段 action 被某个 agent 跑过。
   ↳ 机制见 §4.2 carrier taxonomy + §7 sampling 算法;验证见 §10.5 RQ3 (R1/R2/R3 三档,尤其 R3 snapshot-only,论文 headline);量化指标见 §10.2 (bit recovery / decode success / wrong-key acceptance)。
 - `Forensics (persistence-layer attribution)`
@@ -338,7 +338,7 @@ MemoryAgentBench 官方信息：
 - [README_en.md](/Users/henry_mao/AgentMark/README_en.md:38) —— 算法细节与 capacity / utility 分析
 
 - **输入端**(§4.2 / §4.2.3) —— 把 memory evolve 决策抽象成 sampler 能消费的 `(C_t, p_t, ctx_t)`
-- **输出端**(§9) —— 把 sampler 的 keyed selection 锁进 commitment + Merkle log,使 watermark 从 runtime-only 的归因机制升级为 lifecycle-survivable 的 provenance 证据(详见 §9.5)
+- **输出端**(§9) —— 把 sampler 的 keyed selection 锁进 commitment + Merkle log,使 watermark 从 runtime-only 的归因机制升级为 lifecycle-survivable 的 attribution 证据(详见 §9.5)
 
 ### 7.1 Distribution-Preserving 性质 — 形式化提要
 
@@ -473,9 +473,9 @@ agentmark-mem-v1::qwen3.5-397b-a17b@<weights-hash>::T_score=0.0::T_enum=0.7::jso
 - 把 `reveal_t` 与 memory record 同表/同对象存储 (snapshot-only verification 的关键,见 §10.5)
 - 验证端不再依赖任何 memory system 数据库的诚实性,只依赖外部 anchor 与 PRF key
 
-↳ **支撑 RQ3 R3 / Headline (§10.5)** —— `reveal_t` 与 `memory record` 同表存储 + `header_T` anchor 写入 snapshot 内,是 "仅凭 memory snapshot 完成 provenance 归因" 在物理层的成立条件。
+↳ **支撑 RQ3 R3 / Headline (§10.5)** —— `reveal_t` 与 `memory record` 同表存储 + `header_T` anchor 写入 snapshot 内,是 "仅凭 memory snapshot 完成 attribution 归因" 在物理层的成立条件。
 
-§7 的 watermark只能保证 *"这次 keyed selection 来自 key K"*,不能保证 *"这条 reveal record 是当时写下的"*。本节描述的 audit trace 把 watermark 的 keyed selection 与 keyed nonce 哈希锁进 commitment,使 watermark 从 runtime-only 的归因机制升级为 lifecycle-survivable 的 provenance 证据。
+§7 的 watermark只能保证 *"这次 keyed selection 来自 key K"*,不能保证 *"这条 reveal record 是当时写下的"*。本节描述的 audit trace 把 watermark 的 keyed selection 与 keyed nonce 哈希锁进 commitment,使 watermark 从 runtime-only 的归因机制升级为 lifecycle-survivable 的 attribution 证据。
 
 ## 10. Experiments
 
@@ -512,7 +512,7 @@ agentmark-mem-v1::qwen3.5-397b-a17b@<weights-hash>::T_score=0.0::T_enum=0.7::jso
 
 ### 10.3 RQ1 — Utility Preservation
 
-**Question**: watermark 是否破坏 memory system 自身的 utility?这是后续所有 RQ 的成立前提:provenance 不能以 broken memory 为代价。
+**Question**: watermark 是否破坏 memory system 自身的 utility?这是后续所有 RQ 的成立前提:attribution 不能以 broken memory 为代价。
 
 **Setup**: 三个 benchmark × 两个 LLM × 三个 backend,各跑 `no-watermark` 与 `+ memory-watermark`,比较 §10.2 中 Utility 列的全部指标。
 
@@ -528,7 +528,7 @@ agentmark-mem-v1::qwen3.5-397b-a17b@<weights-hash>::T_score=0.0::T_enum=0.7::jso
 
 ### 10.5 RQ3 — Snapshot-Only / Partial-Log Verification (Headline)
 
-**Question**: 在 RQ1 / RQ2 已证 watermark 既不破坏 utility 也有非平凡容量后,**这一节是论文的 headline**:没有完整 action trajectory 时,仅凭 memory snapshot 能否完成可验证归因?这是 *state-evolution provenance* 与 AgentMark / ActHook 的核心差异点。
+**Question**: 在 RQ1 / RQ2 已证 watermark 既不破坏 utility 也有非平凡容量后,**这一节是论文的 headline**:没有完整 action trajectory 时,仅凭 memory snapshot 能否完成可验证归因?这是 *state-evolution attribution* 与 AgentMark / ActHook 的核心差异点。
 
 **动机**: 在最有取证价值的情形里 —— memory database 被外泄 / 二次封装 / 蒸馏 / 跨系统迁移 —— action trace 通常不可得。这正是 §1 motivation 表格里 *"能否归因到无可见行为的 state 改动"* 一列的承诺。RQ1 / RQ2 给的是 *watermark 本身能不能用* 的回答;RQ3 给的是 *watermark 能不能在 trajectory 缺失下仍然完成归因* 的回答。
 
@@ -538,7 +538,7 @@ agentmark-mem-v1::qwen3.5-397b-a17b@<weights-hash>::T_score=0.0::T_enum=0.7::jso
 |--------|-----------|-------------|---------|
 | `R1: Full External Log` | 完整外部 reveal log + Merkle tree + memory snapshot | 内部审计,审计员有外部 audit store | bit recovery ≈ 1.0,FPR ≈ 0 |
 | `R2: Partial External Log` | memory snapshot + 部分外部 reveal record(随机 / 时间窗 / per-carrier 子集) | 外部日志被截断 / 丢失 | bit recovery 随外部保留比例平滑下降 |
-| **`R3: In-Record Provenance Verification (Headline)`** | 仅 memory snapshot,无任何外部 reveal log;依赖 §9.4 中**存于 memory record 内 sidecar 的 `reveal_t` 残留** + snapshot 内 anchor table 的 `header_T` | 数据被外泄 / 蒸馏 / 跨系统迁移后,外部 audit store 不可得 | bit recovery 显著高于 wrong-key baseline,FPR ≤ 0.01 |
+| **`R3: In-Record Attribution Verification (Headline)`** | 仅 memory snapshot,无任何外部 reveal log;依赖 §9.4 中**存于 memory record 内 sidecar 的 `reveal_t` 残留** + snapshot 内 anchor table 的 `header_T` | 数据被外泄 / 蒸馏 / 跨系统迁移后,外部 audit store 不可得 | bit recovery 显著高于 wrong-key baseline,FPR ≤ 0.01 |
 
 **R3 可行性依据**: §9.4 已把 `reveal_t` 与 `memory record` 同表 / 同对象存储,且 `header_T` (Merkle root + signature) 写入 snapshot 内的 anchor table。验证流程:
 
@@ -557,7 +557,7 @@ agentmark-mem-v1::qwen3.5-397b-a17b@<weights-hash>::T_score=0.0::T_enum=0.7::jso
 - **carrier-level R3 成功率** —— 三类 carrier 在 in-record 下的 decode 成功率分别报告
 - **watermark vs metadata-only marginal gain** —— `+memory-watermark` 相对 `signed-metadata-only` 在 R3 下的 attribution 信号差距(关键 ablation,直接刻画 watermark 是否真的提供归因价值)
 
-只要 (i) R3 的 decode 成功率显著高于 wrong-key baseline 且 FPR 可控,(ii) `+memory-watermark` 在 R3 下显著优于 `signed-metadata-only`,即认为 in-record provenance verification 与 watermark 边际价值同时成立。
+只要 (i) R3 的 decode 成功率显著高于 wrong-key baseline 且 FPR 可控,(ii) `+memory-watermark` 在 R3 下显著优于 `signed-metadata-only`,即认为 in-record attribution verification 与 watermark 边际价值同时成立。
 
 ### 10.6 RQ4 — Robustness against Memory-Specific Attacks
 
@@ -616,7 +616,7 @@ MemMark 与五条研究线相关。**没有任何已有工作同时覆盖** *beh
 - **Memory as Action** [`2510.12635`] —— 显式把 memory store / retrieve / update 当作 RL agent 的可学习动作。
 - **A-MAC: Adaptive Memory Admission Control** [`2603.04549`] —— memory write/admission 当作显式决策问题。
 
-如果接受 "memory ops = action" 的视角,MemMark 的 carrier 就只是 AgentMark 的扩展 action vocabulary。我们的真正差异不在 carrier 的存在性,而在 *验证证据* 的位置:**AgentMark / ActHook / AGENTWM as published 都假设 verifier 持有 action trajectory,而 forensic 场景里 trajectory 通常已被丢弃**;MemMark 把验证证据从外部 trajectory 转移到 *memory record 自身的 in-record sidecar*,这是工程层面的差异(见 §10.5 R3 In-Record Provenance Verification),不是 cryptographic impossibility 论证。
+如果接受 "memory ops = action" 的视角,MemMark 的 carrier 就只是 AgentMark 的扩展 action vocabulary。我们的真正差异不在 carrier 的存在性,而在 *验证证据* 的位置:**AgentMark / ActHook / AGENTWM as published 都假设 verifier 持有 action trajectory,而 forensic 场景里 trajectory 通常已被丢弃**;MemMark 把验证证据从外部 trajectory 转移到 *memory record 自身的 in-record sidecar*,这是工程层面的差异(见 §10.5 R3 In-Record Attribution Verification),不是 cryptographic impossibility 论证。
 
 ### 11.2 RAG / Corpus-Level Watermarking
 
@@ -683,14 +683,14 @@ MemMark 的独特点是同时勾上 **behavioral × memory layer × in-record ve
 
 ## 12. 一句话结论
 
-**MemMark** 本质上是在做 **state-evolution provenance**：
+**MemMark** 本质上是在做 **state-evolution attribution**：
 
 - 在 `Cognee / A-MEM / Graphiti` 三种结构不同的 memory system 上,统一抽象出 backend-invariant 的 evolve carrier taxonomy (update / link / semantic),仅靠 ~200–300 行的 backend native API wrapper 接入,不引入外部 harness
 - 用 `AgentMark` 风格的 distribution-preserving sampling 把 watermark 嵌入 *latent state-transition* 决策(三类 carrier:update / link / semantic)
 - 用 commitment + Merkle log 的 cryptographic audit trace 替代普通 JSON log,实现 tamper-evident、partial-verifiable 的归因
 - 用 `LoCoMo + LongMemEval + MemoryAgentBench` 三个 benchmark 跨 conversation / knowledge-update / incremental multi-turn 三类 regime 评估
 - 用 memory-specific 攻击模型 (compaction / dedup / supersession / paraphrase rewrite / pruning / poisoning / manual edits + KGMark-style edge relabel / subgraph reanchor) 取代 LLM 文本水印的通用扰动测试
-- 用 **In-Record Provenance Verification (R3)** 完成一个 AgentMark / ActHook *as published* 设定下做不到的实验:仅凭 memory snapshot 内的 in-record sidecar 完成 writer attribution,**且通过 `signed-metadata-only` baseline 量化 watermark 相对纯 metadata 的边际归因价值**
+- 用 **In-Record Attribution Verification (R3)** 完成一个 AgentMark / ActHook *as published* 设定下做不到的实验:仅凭 memory snapshot 内的 in-record sidecar 完成 writer attribution,**且通过 `signed-metadata-only` baseline 量化 watermark 相对纯 metadata 的边际归因价值**
 
 ## 13. 参考资料
 

@@ -35,10 +35,10 @@
 
 - `Ownership / Provenance (state-level)`
   证明某套长期 memory state 由某个 agent runtime 演化得到，而不只是某段 action 被某个 agent 跑过。
-  ↳ 机制见 §4.2 carrier taxonomy + §7 sampling 算法;验证见 §10.3 RQ1 (R1/R2/R3 三档,尤其 R3 snapshot-only,论文 headline);量化指标见 §10.2 (bit recovery / decode success / wrong-key acceptance)。
+  ↳ 机制见 §4.2 carrier taxonomy + §7 sampling 算法;验证见 §10.5 RQ3 (R1/R2/R3 三档,尤其 R3 snapshot-only,论文 headline);量化指标见 §10.2 (bit recovery / decode success / wrong-key acceptance)。
 - `Forensics (persistence-layer attribution)`
   在 memory 被复制、二次封装、跨系统迁移后，即便 action trajectory 已不可得，仍能做归因分析。
-  ↳ 关键实验见 §10.3 RQ1 R3 (snapshot-only verification,headline);威胁面见 §10.6 RQ4 攻击模型中的 `poisoning / pruning / manual edits` 行。
+  ↳ 关键实验见 §10.5 RQ3 R3 (snapshot-only verification,headline);威胁面见 §10.6 RQ4 攻击模型中的 `poisoning / pruning / manual edits` 行。
 - `Tamper Detection (commitment-bound)`
   当 memory history 被压缩、篡改、重排时，commitment + Merkle log 可独立检测，不依赖 memory system 数据库自身的诚实性。
   ↳ 机制见 §9 (per-decision commitment + per-session Merkle log + signed root);量化指标见 §10.6 RQ4 表格中的 `tamper detection rate` 列 (commitment 校验失败率)。
@@ -323,7 +323,7 @@ LongMemEval 官方信息：
 这对 memory watermark 重要的原因是:
 
 - `accurate retrieval` 直接对应 `update_target / link_target` 这两类 carrier 的 utility 底线
-- `selective forgetting` 是触发 §10.3 中 `pruning` 攻击的天然评测面
+- `selective forgetting` 是触发 §10.6 中 `pruning` 攻击的天然评测面
 - `incremental multi-turn` 形式覆盖了 streaming 演化场景,用一个 benchmark 同时压住"结构化组织 + 持续演化"两条路径,不用再单列其它
 
 MemoryAgentBench 官方信息：
@@ -436,7 +436,7 @@ header_T = (agent_id, user_id, session_id, T, root_T, sig_K(root_T))
 
 这样即便 memory system 内部的 history / changelog 被篡改,只要外部 anchor 还在,任何子集 commitments 都可以通过 Merkle proof 被验证属于原始 session。
 
-↳ **支撑 RQ1 R2 (§10.3) 与 RQ4 (§10.6)** —— Merkle proof 是 R2 (Snapshot + Partial Reveal) 在保留比例 `∈ {90%, 70%, …, 10%}` 下能平滑下降而非直接归零的物理基础,同时也是 `compaction / dedup / pruning` 攻击下"任意子集仍可验证"的密码学机制。
+↳ **支撑 RQ3 R2 (§10.5) 与 RQ4 (§10.6)** —— Merkle proof 是 R2 (Snapshot + Partial Reveal) 在保留比例 `∈ {90%, 70%, …, 10%}` 下能平滑下降而非直接归零的物理基础,同时也是 `compaction / dedup / pruning` 攻击下"任意子集仍可验证"的密码学机制。
 
 ### 9.3 Reveal Record
 
@@ -471,7 +471,7 @@ agentmark-mem-v1::qwen3.5-397b-a17b@<weights-hash>::T_score=0.0::T_enum=0.7::jso
 
 只有以上三步全部通过,该决策才被认为 *"带水印地、可验证地、未被篡改地"* 产生过。
 
-↳ **支撑 RQ2 / RQ3 跨 LLM 实验 (§10.4 / §10.5)** —— `watermark_version` 把 DeepSeek v4 Pro 与 Qwen3.5-397B-A17B 的身份(model id + api-version / weights-hash + 温度 + JSON 模式)一起 hash 进 `commit_t`,任一项变化即 commitment 失配,从而保证 §10.4 utility 对比与 §10.5 capacity 报告在跨 LLM 复现时不会被误读为同一 audit trace。
+↳ **支撑 RQ1 / RQ2 跨 LLM 实验 (§10.3 / §10.4)** —— `watermark_version` 把 DeepSeek v4 Pro 与 Qwen3.5-397B-A17B 的身份(model id + api-version / weights-hash + 温度 + JSON 模式)一起 hash 进 `commit_t`,任一项变化即 commitment 失配,从而保证 §10.3 utility 对比与 §10.4 capacity 报告在跨 LLM 复现时不会被误读为同一 audit trace。
 
 ### 9.4 与 Memory System 自身 history 的关系
 
@@ -484,10 +484,10 @@ agentmark-mem-v1::qwen3.5-397b-a17b@<weights-hash>::T_score=0.0::T_enum=0.7::jso
 它们各自的 history 都只能记录 `ADD / UPDATE / DELETE` 这一类业务事件,**没有密码学性质**。任何有 DB 写权限的人都能静默改history,改完看不出来。本项目的做法:
 
 - 把 `header_T` 写进各 backend 自身 history 的末端 (in-storage anchor)
-- 把 `reveal_t` 与 memory record 同表/同对象存储 (snapshot-only verification 的关键,见 §10.6)
+- 把 `reveal_t` 与 memory record 同表/同对象存储 (snapshot-only verification 的关键,见 §10.5)
 - 验证端不再依赖任何 memory system 数据库的诚实性,只依赖外部 anchor 与 PRF key
 
-↳ **支撑 RQ4 R3 / Headline (§10.6)** —— `reveal_t` 与 `memory record` 同表存储 + `header_T` anchor 写入 snapshot 内,是 "仅凭 memory snapshot 完成 provenance 归因" 在物理层的成立条件。
+↳ **支撑 RQ3 R3 / Headline (§10.5)** —— `reveal_t` 与 `memory record` 同表存储 + `header_T` anchor 写入 snapshot 内,是 "仅凭 memory snapshot 完成 provenance 归因" 在物理层的成立条件。
 
 §7 的 watermark只能保证 *"这次 keyed selection 来自 key K"*,不能保证 *"这条 reveal record 是当时写下的"*。本节描述的 audit trace 把 watermark 的 keyed selection 与 keyed nonce 哈希锁进 commitment,使 watermark 从 runtime-only 的归因机制升级为 lifecycle-survivable 的 provenance 证据。
 
@@ -520,11 +520,27 @@ agentmark-mem-v1::qwen3.5-397b-a17b@<weights-hash>::T_score=0.0::T_enum=0.7::jso
 | **Tamper detection** | commitment / Merkle proof 校验失败率 (per-attack,见 §10.5) |
 | **Memory integrity** | update target accuracy, link target accuracy, merge correctness, delete correctness, duplication rate, contradiction rate, stale-memory retention, temporal consistency |
 
-### 10.3 RQ1 — Snapshot-Only / Partial-Log Verification (Headline)
+### 10.3 RQ1 — Utility Preservation
 
-**Question**: 没有完整 action trajectory 时,仅凭 memory snapshot 能否完成可验证归因?这是 *state-evolution provenance* 与 AgentMark / ActHook 的核心差异点,**整篇论文的 headline 实验**。
+**Question**: watermark 是否破坏 memory system 自身的 utility?这是后续所有 RQ 的成立前提:provenance 不能以 broken memory 为代价。
 
-**动机**: 在最有取证价值的情形里 —— memory database 被外泄 / 二次封装 / 蒸馏 / 跨系统迁移 —— action trace 通常不可得。这正是 §1 motivation 表格里 *"能否归因到无可见行为的 state 改动"* 一列的承诺。论文先把这件 AgentMark/ActHook 在原理上做不到的事情说清楚,后面 RQ2/RQ3/RQ4 才是支撑性实验(utility / capacity / robustness 必须配合 RQ1 的成立)。
+**Setup**: 三个 benchmark × 两个 LLM × 三个 backend,各跑 `no-watermark` 与 `+ memory-watermark`,比较 §10.2 中 Utility 列的全部指标。
+
+**Expected outcome**: 在所有 (LLM, backend, benchmark) 组合上,watermark 引入的 utility 下降在统计噪声范围内;retain / recall latency 与 token cost 的相对增幅 ≤ 一个预先声明的阈值(如 5%);memory write 路径无额外失败。
+
+### 10.4 RQ2 — Capacity
+
+**Question**: memory evolve 决策能承载多少 bit?
+
+**Setup**: 在每个 turn 上记录 candidate-set size `|C_t|` 与分布 entropy `H(p_t)`(见 §4.2.3),以及 sampler 实际嵌入的 `bits_embedded`。按 carrier 分别汇总。
+
+**Expected outcome**: 报告 (i) 每类 carrier 的平均 `|C_t|` 与 `H(p_t)`(理论上界),(ii) 实际 bits per decision / per session / per episode(实际容量),(iii) 每百轮对话平均嵌入 bit 数。同时回应 reviewer attack *"prompted enumeration ≠ intrinsic decision freedom"*:per-carrier per-backend `H(p_t)` 分布必须显著高于零。
+
+### 10.5 RQ3 — Snapshot-Only / Partial-Log Verification (Headline)
+
+**Question**: 在 RQ1 / RQ2 已证 watermark 既不破坏 utility 也有非平凡容量后,**这一节是论文的 headline**:没有完整 action trajectory 时,仅凭 memory snapshot 能否完成可验证归因?这是 *state-evolution provenance* 与 AgentMark / ActHook 的核心差异点。
+
+**动机**: 在最有取证价值的情形里 —— memory database 被外泄 / 二次封装 / 蒸馏 / 跨系统迁移 —— action trace 通常不可得。这正是 §1 motivation 表格里 *"能否归因到无可见行为的 state 改动"* 一列的承诺。RQ1 / RQ2 给的是 *watermark 本身能不能用* 的回答;RQ3 给的是 *watermark 能不能在 trajectory 缺失下仍然完成归因* 的回答。
 
 **Verification regime**: 三档逐步降级的证据可得性。
 
@@ -549,25 +565,9 @@ agentmark-mem-v1::qwen3.5-397b-a17b@<weights-hash>::T_score=0.0::T_enum=0.7::jso
 
 只要 R3 的 decode 成功率显著高于 wrong-key baseline 且 FPR 可控,即完成 AgentMark / ActHook 在原理上做不到的事情 —— **仅凭 latent state 完成 provenance 归因**。
 
-### 10.4 RQ2 — Utility Preservation
-
-**Question**: watermark 是否破坏 memory system 自身的 utility?(RQ1 的成立前提:provenance 不能以 broken memory 为代价)
-
-**Setup**: 三个 benchmark × 两个 LLM × 三个 backend,各跑 `no-watermark` 与 `+ memory-watermark`,比较 §10.2 中 Utility 列的全部指标。
-
-**Expected outcome**: 在所有 (LLM, backend, benchmark) 组合上,watermark 引入的 utility 下降在统计噪声范围内;retain / recall latency 与 token cost 的相对增幅 ≤ 一个预先声明的阈值(如 5%);memory write 路径无额外失败。
-
-### 10.5 RQ3 — Capacity
-
-**Question**: memory evolve 决策能承载多少 bit?(RQ1 的成立前提:必须有非平凡的 keyed selection 自由度)
-
-**Setup**: 在每个 turn 上记录 candidate-set size `|C_t|` 与分布 entropy `H(p_t)`(见 §4.2.3),以及 sampler 实际嵌入的 `bits_embedded`。按 carrier 分别汇总。
-
-**Expected outcome**: 报告 (i) 每类 carrier 的平均 `|C_t|` 与 `H(p_t)`(理论上界),(ii) 实际 bits per decision / per session / per episode(实际容量),(iii) 每百轮对话平均嵌入 bit 数。同时回应 reviewer attack *"prompted enumeration ≠ intrinsic decision freedom"*:per-carrier per-backend `H(p_t)` 分布必须显著高于零。
-
 ### 10.6 RQ4 — Robustness against Memory-Specific Attacks
 
-**Question**: watermark 在长期记忆系统天然会经历的 lifecycle 操作与定向攻击下是否仍可恢复 / 可检测?(RQ1 在真实威胁模型下的延伸)
+**Question**: watermark 在长期记忆系统天然会经历的 lifecycle 操作与定向攻击下是否仍可恢复 / 可检测?(RQ3 在真实威胁模型下的延伸)
 
 **Threat model**(对应 §9 cryptographic audit trace):
 
@@ -597,7 +597,7 @@ agentmark-mem-v1::qwen3.5-397b-a17b@<weights-hash>::T_score=0.0::T_enum=0.7::jso
 
 **Question**: memory watermark 与已有 content watermark (LLM 文本水印 / AgentMark action-layer) 同时开启时是否兼容?
 
-**Setup**: 三档配置 —— `memory-only` / `content-only` / `both`,在 §10.3 的 R1 协议下分别跑 utility 与 decode 指标。
+**Setup**: 三档配置 —— `memory-only` / `content-only` / `both`,在 §10.5 的 R1 协议下分别跑 utility 与 decode 指标。
 
 **Expected outcome**: (i) memory decode 不受明显影响,(ii) content watermark 检测能力仍保留,(iii) utility 没有叠加性崩坏。如果两者出现冲突,应在 carrier-level 指出哪种 carrier 与 content watermark 不正交,作为后续工作。
 

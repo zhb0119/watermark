@@ -587,7 +587,78 @@ agentmark-mem-v1::qwen3.5-397b-a17b@<weights-hash>::T_score=0.0::T_enum=0.7::jso
 **Expected outcome**: (i) memory decode 不受明显影响,(ii) content watermark 检测能力仍保留,(iii) utility 没有叠加性崩坏。如果两者出现冲突,应在 carrier-level 指出哪种 carrier 与 content watermark 不正交,作为后续工作。
 
 
-## 11. 一句话结论
+## 11. Related Work
+
+MemMark 与五条研究线相关。**没有任何已有工作同时覆盖** *behavioral watermark* + *memory-evolve 决策层* + *cryptographic / snapshot-only verification* 这三件事;每条 prior line 都只覆盖其中一个或两个维度。
+
+### 11.1 Agent Behavioral Watermarking
+
+最相邻的工作。所有这些方法都在 *visible action* 层嵌水印,验证必须有 action trajectory:
+
+- **AgentMark** [`2601.03294`] —— planning / tool / subgoal 决策的 distribution-preserving keyed sampling。MemMark 直接复用其 sampler(§7);差别在 carrier:AgentMark 选 *做什么*,MemMark 选 *如何改 latent state*。
+- **Agent Guide** [`2504.05871`] —— 同框架,通过概率偏置引导高层行为决策。
+- **ActHook** (Watermarking LLM Agent Trajectories) [`2602.18700`] —— 在 trajectory dataset 中插入 hook actions,运行时由 secret key 触发。
+- **AGENTWM** (On Protecting Agentic Systems' IP via Watermarking) [`2602.08401`] —— 偏置语义等价 tool 执行路径的分布。
+
+→ **MemMark 差异**: 把 watermark 从 *visible action* 下推到 *latent memory state evolution*。R3 snapshot-only verification(§10.5)是这条线**在原理上做不到**的实验,因为 trajectory 在外泄场景下不可得。
+
+### 11.2 RAG / Corpus-Level Watermarking
+
+最容易与 MemMark 混淆的一条线。**全部都在静态 corpus 内容上做 watermark**,检测必须 black-box 查询 LLM:
+
+- **RAG-WM** [`2501.05249`, 2025] —— 把 entity-relation tuple 注入 RAG 知识库文档,通过响应文本中的 watermark artifact 检测 RAG 是否被偷。
+- **Ward / RAG-DI** [`2410.03537`, ICLR 2025] —— 用 LLM text watermark 给 corpus 文档加签,通过 dataset inference 验证。
+- **Watermarked Canaries** [`2502.10673`, 2025] —— 在 IP dataset 中注入合成 canary 文档,黑盒查询 canary 检测 watermark。
+- **AQUA** [`2506.10030`, 2025] —— multimodal RAG 的图像内容 watermark,signal 通过 image retriever → text generator 间接传播。
+
+→ **MemMark 差异**: 这些方法保护 *数据 IP*("谁偷了我的文档"),MemMark 做的是 *writer attribution*("这套 memory state 是谁演化出来的")。机制上,前者是静态内容注入,MemMark 是 behavioral 在 evolve 决策上做 keyed selection;验证上,前者必须 LLM 查询,MemMark 可仅凭 snapshot(R3)。
+
+### 11.3 LLM Text Watermarking
+
+更底层的一条线,只与 MemMark 在 §10.9 RQ6 (Composability) 的 appendix 里有交集:
+
+- **KGW** [`2301.10226`] —— green/red token list 的 logits-level watermark。
+- **SynthID-Text** (Nature 2024) [`s41586-024-08025-4`] —— Tournament sampling,distribution-preserving。
+- **MarkLLM** (EMNLP 2024 Demo) —— 整合多种 token-level 水印的开源工具包。
+
+→ **MemMark 差异**: 这些是 token-level 水印,作用在 LLM 最终输出文本上;MemMark 不动输出文本,只动 memory backend 的 evolve 决策。两者正交,§10.9 验证在同时开启时彼此不打架。
+
+### 11.4 Long-Term Memory Systems for Agents
+
+MemMark 的 *运行环境* 而非竞争方法。这些系统都没有内建的 cryptographic provenance,本项目把它们当 backend 接入:
+
+- **Cognee** —— knowledge-graph / triplet store。
+- **A-MEM** [`2502.12110`] —— agentic notes + 动态组织网络。
+- **Graphiti** —— temporal context graph,带 fact invalidation / supersession。
+- **MemOS** [`2507.03724`] —— `MemCube` 抽象,包含 provenance / versioning metadata,但**只是字段而非密码学证据**。
+- **MemMachine** [`2604.04853`] —— ground-truth-preserving memory system,无 watermark。
+- *Memory in the Age of AI Agents: A Survey* [`2603.07670`] —— 长期记忆 agent 的 mechanisms / evaluation 综述。
+
+→ **MemMark 关系**: 这些是 *backend*,不是 *baseline*。MemMark 在 §4.2.3 的最小 adapter 接口下兼容它们,且不修改源码。MemOS 的 metadata-style provenance 与 MemMark 的密码学 provenance 形成对照(§9.4 解释了为何 metadata 不够)。
+
+### 11.5 Cryptographic Provenance Primitives
+
+MemMark §9 的 audit trace 是把成熟密码学原语**移植到 memory-evolve 场景**:
+
+- **Commitment schemes** —— 标准的 commit-then-reveal 协议,MemMark §9.1 用于 per-decision commitment。
+- **Merkle trees / transparency logs** —— Certificate Transparency 等公开 anchor 实践,MemMark §9.2 用于 per-session log + signed root。
+- **PRF-keyed nonce** —— 防 replay,§9.1 的 `nonce_t = PRF(K, ctx_t)`。
+
+→ **MemMark 关系**: 不发明新密码学,只把现有原语和 §7 sampler 在 evolve 决策点结合。这是 *systems-level* 贡献,不是 *crypto* 贡献,论文不主张 cryptographic novelty。
+
+### 11.6 总结定位
+
+| 维度 | §11.1 Agent | §11.2 RAG/Corpus | §11.3 LLM Text | §11.4 Memory Systems | §11.5 Crypto Primitives | **MemMark** |
+|------|-------------|------------------|----------------|---------------------|------------------------|-------------|
+| 是否 behavioral | ✅ | ❌(static) | ❌(token) | N/A | N/A | ✅ |
+| 嵌在 memory layer | ❌(action) | ❌(corpus) | ❌(output) | N/A | N/A | ✅ |
+| Snapshot-only verifiable | ❌ | ❌ | ❌ | N/A | N/A | ✅ (R3) |
+| 抗 memory lifecycle 攻击 | ❌ | partial | ❌ | N/A | N/A | ✅ (§10.6) |
+| Cryptographic audit | ❌ | ❌ | ❌ | metadata only | ✅ | ✅ |
+
+MemMark 的独特点就是这张表的最后一列 —— 五个维度同时勾上的唯一工作。
+
+## 12. 一句话结论
 
 **MemMark** 本质上是在做 **state-evolution provenance**：
 
@@ -598,7 +669,7 @@ agentmark-mem-v1::qwen3.5-397b-a17b@<weights-hash>::T_score=0.0::T_enum=0.7::jso
 - 用 memory-specific 攻击模型 (compaction / dedup / supersession / paraphrase rewrite / pruning / poisoning / manual edits) 取代 LLM 文本水印的通用扰动测试
 - 用 **snapshot-only / partial-log verification** 完成一个 AgentMark / ActHook 在原理上做不到的实验:仅凭 memory snapshot 也能完成可验证归因
 
-## 12. 参考资料
+## 13. 参考资料
 
 - AgentMark 论文 PDF： [2601.03294v2.pdf]
 - AgentMark 代码说明： [README_en.md]

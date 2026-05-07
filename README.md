@@ -1,4 +1,5 @@
-# 面向长期记忆 Agent 的 Memory Watermark 系统
+# MemMark: State-Evolution Provenance Watermarking for Long-Term Agent Memory Systems
+
 
 ## 1. 背景与 Motivation —— State-Evolution Provenance
 
@@ -590,7 +591,7 @@ agentmark-mem-v1::qwen3.5-397b-a17b@<weights-hash>::T_score=0.0::T_enum=0.7::jso
 
 ## 11. 一句话结论
 
-这个系统本质上是在做 **state-evolution provenance**：
+**MemMark** 本质上是在做 **state-evolution provenance**：
 
 - 在 `Cognee / A-MEM / Graphiti` 三种结构不同的 memory system 上，统一抽象出 backend-invariant 的 evolve carrier taxonomy (update / link / semantic / merge),仅靠 ~200–300 行的 backend native API wrapper 接入,不引入外部 harness
 - 用 `AgentMark` 风格的 distribution-preserving sampling 把 watermark 嵌入 *latent state-transition* 决策

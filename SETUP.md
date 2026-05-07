@@ -1,6 +1,6 @@
 # Setup — Memory Watermark Experiments
 
-This repo contains AgentMark + the Memory Watermark design (`MEMORY_WATERMARK_SYSTEM.md`).
+This repo contains AgentMark + the Memory Watermark design (`README.md`).
 
 The experiments depend on six external research repos (memory backends + benchmarks). They are intentionally **not** vendored — each is its own upstream repo with its own license. Clone them as siblings of this repo (or anywhere on `PYTHONPATH`) before running experiments.
 
@@ -37,7 +37,7 @@ If you need to pin to the exact commits the design doc was written against, use 
 
 ## After cloning
 
-See `MEMORY_WATERMARK_SYSTEM.md` for:
+See `README.md` for:
 
 - §4.2.3 — backend adapter interface
 - §5 — system shape (which LLM to use, harness, audit store)

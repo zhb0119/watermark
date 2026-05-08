@@ -62,9 +62,8 @@
 
 我们要 watermark 的对象不是最终回答文本，而是 `memory operation selection`，即 `memory evolve` 决策。
 
-在本项目里，先聚焦三个 memory system：
+在本项目里，先聚焦两个 memory system：
 
-- `Cognee`
 - `A-MEM`
 - `Graphiti`
 
@@ -80,21 +79,12 @@
 
 - 它们都发生在 `memory evolve` 过程内部,而不是最终回答表面
 - 它们都可以通过"等价候选选择"来嵌水印,较不容易直接伤害 utility
-- 它们在 `Cognee / A-MEM / Graphiti` 这三类结构化 memory system 里都能找到自然对应物
+- 它们在 `A-MEM / Graphiti` 这两类结构化 memory system 里都能找到自然对应物
 - 不用粗粒度 watermark 容量太低 —— 如果只在 ADD / UPDATE / DELETE / NONE 这种层面嵌,单次决策能承载的信息非常有限,而且很多真实 turn 根本不会同时存在这三种都合理的候选。长期记忆写入本来就比普通 agent step 稀疏,粗粒度操作再压一层,最终 bit rate 会很低。
   
-### 4.1 三个 Memory System 中的具体定义
+### 4.1 两个 Memory System 中的具体定义
 
-#### Cognee
-
-在 Cognee 里,memory 更接近持续演化的 knowledge graph / triplet store,因此这三类 watermark 可以定义为:
-
-- `哪条 memory 被更新`
-  - 多个已有 node / triplet / fact snippet 都可能与新信息相关,系统需要决定更新哪一个已有表示。
-- `哪个 existing memory 被链接`
-  - 新信息写入时,可以挂接到不同已有 entity、triplet cluster 或 node set。
-- `同一事实写成哪个语义等价版本`
-  - 同一关系或事实可以用不同但语义等价的 canonical description / relation formulation 表达。
+(早期版本曾把 Cognee 列为第三个 backend,但其 entity resolver 是 `difflib.get_close_matches(n=1)` 规则匹配,不是多候选 LLM 决策;唯一能被 native LLM-call hook 拦到的内部 LLM 调用只对得上 `semantic_realization` 一条 carrier,`update_target` / `link_target` 在 Cognee 上结构性缺失。出于"宁可少也要诚实"的原则,Cognee 已从 backend 列表移除。)
 
 #### A-MEM
 
@@ -135,13 +125,13 @@ D_t = ⟨τ, C_t, p_t, ctx_t⟩
 - `p_t : C_t → [0,1]` —— LLM 给出的可接受度分布 (∑ = 1)
 - `ctx_t` —— 与该决策绑定的上下文 (见 §8)
 
-watermark sampler 仅作用在 `(C_t, p_t, ctx_t)` 上，不读不写 backend 的内部结构。这就是 `backend-invariant` 的含义：sampler 与 Cognee / A-MEM / Graphiti 完全解耦。
+watermark sampler 仅作用在 `(C_t, p_t, ctx_t)` 上，不读不写 backend 的内部结构。这就是 `backend-invariant` 的含义：sampler 与 A-MEM / Graphiti 完全解耦。
 
 #### 4.2.2 三类 Carrier 的统一签名
 
 | Carrier `τ` | 候选 `c` 的语义 | state-transition 性质 | 三个 backend 的具体实例 |
 |-------------|----------------|----------------------|------------------------|
-| `update_target` | 旧 memory 的 id | 改变 *哪一条* 已有 state | Cognee node id / A-MEM note id / Graphiti edge id |
+| `update_target` | 旧 memory 的 id | 改变 *哪一条* 已有 state | A-MEM note id / Graphiti edge id |
 | `link_target` | 已有 memory 的 id 或集合 | 改变 *拓扑连接* | KG entity / note keyword cluster / entity-edge attach point |
 | `semantic_realization` | 同义改写候选文本 | 改变 *表述形式*,不改变事实 | triplet phrasing / note description+tags / edge label phrasing |
 
@@ -179,7 +169,7 @@ watermark sampler 只看 `(C_t, p_t)`,因此论文里可以独立报告每类 ca
   - **Qwen3.5-397B-A17B** —— reproducibility + open-weights 主线,确保 audit trace 可被独立重放
   调用形态均为 OpenAI-compatible API。候选枚举阶段 `T=0.7`,scoring 阶段 `T=0.0`,统一开 JSON 模式以对齐 `agentmark/sdk/prompt_adapter.py` 的 `action_weights` 协议。
 - `Memory system`
-  负责实际写入与检索,如 `Cognee` / `A-MEM` / `Graphiti`。turn / session / agent identity / hooks 全由 backend 自身的 SDK 与 benchmark evaluation harness 协同提供,本项目不再额外引入 agent harness。
+  负责实际写入与检索,如 `A-MEM` / `Graphiti`。turn / session / agent identity / hooks 全由 backend 自身的 SDK 与 benchmark evaluation harness 协同提供,本项目不再额外引入 agent harness。
 - `Watermark selector`
   用私钥控制的采样器,在候选中做可验证选择,`AgentMark`。
 - `Audit store`
@@ -189,11 +179,6 @@ watermark sampler 只看 `(C_t, p_t)`,因此论文里可以独立报告每类 ca
 
 本项目把 `memory system` 视为可替换后端，而不是绑定单一实现。不同系统的内部记忆结构不同，但都可以接到同一个 watermark 抽象层上。
 
-- `Cognee`
-  把 watermark 放在:
-  - node / triplet attachment selection
-  - triplet / relation formulation
-  - 同一事实的语义等价改写
 - `A-MEM`
   把 watermark 放在:
   - note linking
@@ -211,7 +196,7 @@ watermark sampler 只看 `(C_t, p_t)`,因此论文里可以独立报告每类 ca
 - 一个可枚举的候选选择空间
 - 一个可记录的 audit trace
 
-`Cognee` / `A-MEM` / `Graphiti` 各自的官方仓库都已经文档化了"如何接入 LLM、跑 LoCoMo / LongMemEval / MemoryAgentBench 的 evaluation"这条端到端路径,我们直接复用各自原生的 LLM 接入与 benchmark 评测脚本,不需要再写一层协调层。watermark 仅在 backend 已经暴露的 evolve 入口挂上 §4.2.3 的 adapter 与 §9 的 audit trace,改动量限制在 backend 自身的 native API wrapper 上。
+`A-MEM` / `Graphiti` 各自的官方仓库都已经文档化了"如何接入 LLM、跑 LoCoMo / LongMemEval / MemoryAgentBench 的 evaluation"这条端到端路径,我们直接复用各自原生的 LLM 接入与 benchmark 评测脚本,不需要再写一层协调层。watermark 仅在 backend 已经暴露的 evolve 入口挂上 §4.2.3 的 adapter 与 §9 的 audit trace,改动量限制在 backend 自身的 native API wrapper 上。
 
 ## 6. Benchmark 设计
 
@@ -461,9 +446,8 @@ agentmark-mem-v1::qwen3.5-397b-a17b@<weights-hash>::T_score=0.0::T_enum=0.7::jso
 
 ### 9.4 与 Memory System 自身 history 的关系
 
-三种 memory system 都有不同形式的内置 changelog:
+两种 memory system 都有不同形式的内置 changelog:
 
-- `Cognee` —— graph/triplet 的 update history 与 dataset 版本
 - `A-MEM` —— note 的 evolve / link 修改历史
 - `Graphiti` —— temporal graph 的 fact invalidation / supersession 链
 
@@ -483,7 +467,7 @@ agentmark-mem-v1::qwen3.5-397b-a17b@<weights-hash>::T_score=0.0::T_enum=0.7::jso
 
 ### 10.1 Experimental Setup
 
-- **Memory backends**: `Cognee` (KG / triplet store) / `A-MEM` (agentic notes) / `Graphiti` (temporal graph)。每个 backend 通过 §4.2.3 的最小 adapter + §5 中描述的 ~50–100 行 native-API wrapper 接入,backend 源码不修改;不引入外部 agent harness。
+- **Memory backends**: `A-MEM` (agentic notes) / `Graphiti` (temporal graph)。每个 backend 通过 §4.2.3 的最小 adapter + §5 中描述的 ~50–100 行 native-API wrapper 接入,backend 源码不修改;不引入外部 agent harness。
 - **Benchmark drivers**: 每个 benchmark 自带的 evaluation harness 直接驱动被 wrap 过的 backend native API —— LoCoMo session replay / LongMemEval `_S` 评测脚本 / MemoryAgentBench incremental multi-turn driver。
 - **LLMs**: 固定两个,见 §5。
   - `DeepSeek v4 Pro` —— headline + cost 主线
@@ -494,7 +478,7 @@ agentmark-mem-v1::qwen3.5-397b-a17b@<weights-hash>::T_score=0.0::T_enum=0.7::jso
   - `no-watermark` —— 不嵌水印,只跑 backend + harness,用于上界 utility
   - `random-replace` —— 同样在 evolve 决策点随机替换候选,无密钥,用于测 FPR / wrong-key 下界
   - `signed-metadata-only` —— 在 evolve 入口存 `reveal_t` 与 Merkle anchor,但 sampler 不嵌 watermark bit;直接对照 watermark 是否在 R3 下提供 *边际归因价值*(见 §10.5 RQ3)
-  - `KGMark @ Cognee/Graphiti` —— ICLR 2025 的动态 KG watermarking 方法,作为 KG-backend 直接 baseline;不适用于 A-MEM(非 KG 结构)
+  - `KGMark @ Graphiti` —— ICLR 2025 的动态 KG watermarking 方法,作为 KG-backend 直接 baseline;不适用于 A-MEM(非 KG 结构)
   - `AgentMark @ action layer` —— 在 ToolBench tool-use trajectory 上跑 AgentMark,用于 R1/R2/R3 跨层对比(see §10.5)
 - **Memory integrity audit**: §10.7 RQ5 报告 update / link target accuracy、duplication rate、contradiction rate 等 ground-truth-driven 指标,确保 watermark 不引入脏 memory
 - **Protocol**: 每个 (backend × LLM × benchmark) 组合跑 ≥ 3 个 seed;evolve 决策与 audit trace 同时落盘 (§9);所有指标在 episode 级别计算,均值 + 标准差。
@@ -626,7 +610,7 @@ MemMark 与五条研究线相关。**没有任何已有工作同时覆盖** *beh
 - **Ward / RAG-DI** [`2410.03537`, ICLR 2025] —— 用 LLM text watermark 给 corpus 文档加签,通过 dataset inference 验证。
 - **Watermarked Canaries** [`2502.10673`, 2025] —— 在 IP dataset 中注入合成 canary 文档,黑盒查询 canary 检测 watermark。
 - **AQUA** [`2506.10030`, 2025] —— multimodal RAG 的图像内容 watermark,signal 通过 image retriever → text generator 间接传播。
-- **KGMark** [ICLR 2025, OpenReview `GKZySvM2t9`] —— **动态 knowledge-graph watermarking**;直接对应 Cognee / Graphiti backend 的 KG 结构,在 KG 节点 / 边上嵌入水印。这是 **MemMark 在 KG-backend 上的直接 baseline**(见 §10.3 baseline 列表);A-MEM 因为是 notes 网络非严格 KG,KGMark 不适用。
+- **KGMark** [ICLR 2025, OpenReview `GKZySvM2t9`] —— **动态 knowledge-graph watermarking**;直接对应 Graphiti backend 的 KG 结构,在 KG 节点 / 边上嵌入水印。这是 **MemMark 在 KG-backend 上的直接 baseline**(见 §10.3 baseline 列表);A-MEM 因为是 notes 网络非严格 KG,KGMark 不适用。
 - **Graph Database Watermarking via Pseudo-Nodes** [ACM 2023] —— 通过插入 pseudo-node 给图数据库加水印;静态 graph DB watermark,与 MemMark 的 behavioral evolve watermark 正交。
 
 → **MemMark 差异**: 这些方法保护 *数据 IP*("谁偷了我的文档"),MemMark 做的是 *writer attribution*("这套 memory state 是谁演化出来的")。机制上,前者是静态内容注入,MemMark 是 behavioral 在 evolve 决策上做 keyed selection;验证上,前者必须 LLM 查询,MemMark 可仅凭 in-record sidecar(R3)。**KGMark 是这条线里离 MemMark 最近的,也是 §10.3 的直接 baseline**。
@@ -645,7 +629,6 @@ MemMark 与五条研究线相关。**没有任何已有工作同时覆盖** *beh
 
 MemMark 的 *运行环境* 而非竞争方法。这些系统都没有内建的 cryptographic provenance,本项目把它们当 backend 接入:
 
-- **Cognee** —— knowledge-graph / triplet store。
 - **A-MEM** [`2502.12110`] —— agentic notes + 动态组织网络。
 - **Graphiti** —— temporal context graph,带 fact invalidation / supersession。
 - **MemOS** [`2505.22101` / `2507.03724`] —— `MemCube` 抽象,包含 provenance / versioning metadata,但**只是字段而非密码学证据**。
@@ -685,7 +668,7 @@ MemMark 的独特点是同时勾上 **behavioral × memory layer × in-record ve
 
 **MemMark** 本质上是在做 **state-evolution attribution**：
 
-- 在 `Cognee / A-MEM / Graphiti` 三种结构不同的 memory system 上,统一抽象出 backend-invariant 的 evolve carrier taxonomy (update / link / semantic),仅靠 ~200–300 行的 backend native API wrapper 接入,不引入外部 harness
+- 在 `A-MEM / Graphiti` 两种结构不同的 memory system 上,统一抽象出 backend-invariant 的 evolve carrier taxonomy (update / link / semantic),仅靠 ~200–300 行的 backend native API wrapper 接入,不引入外部 harness
 - 用 `AgentMark` 风格的 distribution-preserving sampling 把 watermark 嵌入 *latent state-transition* 决策(三类 carrier:update / link / semantic)
 - 用 commitment + Merkle log 的 cryptographic audit trace 替代普通 JSON log,实现 tamper-evident、partial-verifiable 的归因
 - 用 `LoCoMo + LongMemEval + MemoryAgentBench` 三个 benchmark 跨 conversation / knowledge-update / incremental multi-turn 三类 regime 评估
@@ -697,7 +680,6 @@ MemMark 的独特点是同时勾上 **behavioral × memory layer × in-record ve
 - AgentMark 论文 PDF： [2601.03294v2.pdf]
 - AgentMark 代码说明： [README_en.md]
 - AgentMark 采样器： [agentmark/core/watermark_sampler.py]
-- Cognee： https://github.com/topoteretes/cognee
 - A-MEM： https://arxiv.org/abs/2502.12110
 - Graphiti： https://github.com/getzep/graphiti
 - LoCoMo： https://github.com/snap-research/locomo

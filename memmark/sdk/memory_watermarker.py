@@ -64,8 +64,7 @@ class MemoryWatermarker:
         watermark_version: Optional[str] = None,
         sampler_mode: str = "watermark",
         random_seed: Optional[int] = None,
-        n_candidates: int = 4,
-        sampling_temperature: float = 0.7,
+        target_k: int = 4,
     ) -> None:
         if sampler_mode not in SAMPLER_MODES:
             raise ValueError(
@@ -94,8 +93,7 @@ class MemoryWatermarker:
             session_id=session_id,
             sampler_mode=sampler_mode,
             watermark_version=self.watermark_version,
-            n_candidates=n_candidates,
-            sampling_temperature=sampling_temperature,
+            target_k=target_k,
         )
         # Inject the sampler into the backend's SDK. Backends without
         # an internal LLM (JsonStore) implement ``attach_sampler`` as a

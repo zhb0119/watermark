@@ -30,7 +30,7 @@ import re
 from typing import Any, Dict, List, Tuple
 
 from memmark.core.commitment import make_commitment
-from memmark.core.context import derive_nonce, sha256_text
+from memmark.core.context import derive_nonce
 from memmark.core.merkle_log import SessionMerkleLog
 from memmark.core.sampler import sample_memory_transition
 from memmark.core.types import Candidate, DecisionPoint, SessionHeader
@@ -39,6 +39,9 @@ from memmark.core.types import Candidate, DecisionPoint, SessionHeader
 # --------------------------------------------------------------- #
 # AgentMark-style prompt suffix + parser
 # --------------------------------------------------------------- #
+
+
+CARRIER_VOCAB = ("update_target", "link_target", "semantic_realization")
 
 
 AGENTMARK_INSTRUCTION_TMPL = """
@@ -52,10 +55,21 @@ above, return JSON in EXACTLY this multi-candidate form:
     {{"decision": <plausible alternative>, "weight": <float>}}
     // ... up to {target_k} entries
   ],
-  "thought": "<brief rationale>"
+  "thought": "<brief rationale>",
+  "carrier": "<one of: update_target | link_target | semantic_realization>"
 }}
 
-Requirements:
+The "carrier" field describes what kind of decision the candidates above
+represent — pick the single best fit:
+
+- "update_target": you are picking which existing memory record / entity /
+  edge this new information should update or attach to.
+- "link_target":   you are picking which existing memory(s) to link the new
+  fact to (without changing them).
+- "semantic_realization": you are picking how to phrase / structure the same
+  fact (different wording, different tag set, different relation label).
+
+Other requirements:
 - Provide {target_k} candidate alternatives (or as many distinct
   plausible alternatives as you can produce).
 - Each "decision" object must independently match the original schema
@@ -101,22 +115,28 @@ def _extract_json_payload(raw: str) -> Any:
     return None
 
 
-def parse_agentmark_response(raw: str) -> Tuple[List[Any], List[float]]:
-    """Parse ``{candidates: [{decision, weight}, ...], thought}`` →
-    ``(decisions, weights)``.
+def parse_agentmark_response(
+    raw: str,
+) -> Tuple[List[Any], List[float], str]:
+    """Parse ``{candidates: [{decision, weight}, ...], thought, carrier}``
+    → ``(decisions, weights, carrier)``.
 
-    Returns ``([], [])`` if the response can't be parsed as the
-    AgentMark wrapper. Each ``decision`` is whatever shape the LLM
-    emitted (typically ``dict`` for structured output, or
+    Returns ``([], [], "llm_call")`` if the response can't be parsed
+    as the AgentMark wrapper. Each ``decision`` is whatever shape the
+    LLM emitted (typically ``dict`` for structured output, or
     JSON-stringifiable for SDK consumption).
+
+    ``carrier`` is the LLM-self-reported decision class. Falls back to
+    ``"llm_call"`` if the LLM omitted the field or returned a value
+    outside :data:`CARRIER_VOCAB`.
     """
 
     parsed = _extract_json_payload(raw)
     if not isinstance(parsed, dict):
-        return [], []
+        return [], [], "llm_call"
     candidates = parsed.get("candidates")
     if not isinstance(candidates, list):
-        return [], []
+        return [], [], "llm_call"
     decisions: List[Any] = []
     weights: List[float] = []
     for c in candidates:
@@ -128,7 +148,9 @@ def parse_agentmark_response(raw: str) -> Tuple[List[Any], List[float]]:
             w = 0.0
         decisions.append(c["decision"])
         weights.append(max(w, 1e-6))
-    return decisions, weights
+    raw_carrier = str(parsed.get("carrier", "")).strip().lower()
+    carrier = raw_carrier if raw_carrier in CARRIER_VOCAB else "llm_call"
+    return decisions, weights, carrier
 
 
 # --------------------------------------------------------------- #
@@ -200,6 +222,7 @@ class WatermarkedSampler:
         ctx_text: str,
         *,
         prompt_name: str = "",
+        tau: str = "llm_call",
     ) -> str:
         """Keyed-pick over ``(decisions, weights)``; emit audit.
 
@@ -230,8 +253,13 @@ class WatermarkedSampler:
             "prompt": ctx_text,
             "prompt_name": prompt_name,
         }
+        # IMPORTANT: store the *serialized* ctx string on the
+        # DecisionPoint, not its hash. The R3 verifier re-derives nonce
+        # via `derive_nonce(K, audit.context)`, which must match the
+        # nonce we used here (`derive_nonce(K, ctx_serialized)`). If we
+        # stored ctx_hash instead, the verifier would HMAC the hash and
+        # produce a different nonce → R3 silently fails.
         ctx_serialized = json.dumps(ctx_payload, sort_keys=True, ensure_ascii=False)
-        ctx_hash = sha256_text(ctx_serialized)
         nonce = derive_nonce(self.secret_key, ctx_serialized)
 
         cands_obj: List[Candidate] = []
@@ -241,7 +269,7 @@ class WatermarkedSampler:
             cands_obj.append(
                 Candidate(
                     candidate_id=cid,
-                    carrier_type="llm_call",
+                    carrier_type=tau,
                     payload={"text": dec, "prompt_name": prompt_name},
                     operation={},
                     utility_score=normalized[idx - 1],
@@ -251,10 +279,10 @@ class WatermarkedSampler:
 
         decision = DecisionPoint(
             decision_id=f"d{self.round_num + 1}",
-            tau="llm_call",
+            tau=tau,
             candidates=cands_obj,
             probabilities=probs,
-            context=ctx_hash,
+            context=ctx_serialized,
             round_num=self.round_num,
             nonce=nonce,
             watermark_version=self.watermark_version,
@@ -367,7 +395,7 @@ class _AMemInnerWrapper:
         if not isinstance(raw, str) or not raw.strip():
             return self._passthrough(prompt, response_format, temperature)
 
-        decisions, weights = parse_agentmark_response(raw)
+        decisions, weights, carrier = parse_agentmark_response(raw)
         if len(decisions) < 2:
             # LLM didn't comply; fall back to a clean SDK call (no
             # watermark embedded for this LLM call).
@@ -385,6 +413,7 @@ class _AMemInnerWrapper:
             weights,
             ctx_text=prompt,
             prompt_name=self._prompt_name,
+            tau=carrier,
         )
 
     def _passthrough(self, prompt, response_format, temperature) -> str:
@@ -461,6 +490,7 @@ def make_watermarked_graphiti_client(sampler: WatermarkedSampler, underlying: An
                     "AGMWrapped",
                     candidates=(List[Candidate_M], ...),
                     thought=(str, ""),
+                    carrier=(str, "llm_call"),
                 )
             except Exception:
                 return await self._underlying._generate_response(
@@ -526,11 +556,17 @@ def make_watermarked_graphiti_client(sampler: WatermarkedSampler, underlying: An
             ]
             ctx_text = "\n".join(getattr(m, "content", "") for m in messages)
 
+            raw_carrier = ""
+            if isinstance(wrapped_resp, dict):
+                raw_carrier = str(wrapped_resp.get("carrier", "")).strip().lower()
+            carrier = raw_carrier if raw_carrier in CARRIER_VOCAB else "llm_call"
+
             chosen_str = self._sampler.intercept(
                 decision_strs,
                 weights,
                 ctx_text=ctx_text,
                 prompt_name="graphiti",
+                tau=carrier,
             )
             try:
                 chosen = json.loads(chosen_str)
@@ -549,4 +585,5 @@ __all__ = [
     "WatermarkedAMemController",
     "make_watermarked_graphiti_client",
     "parse_agentmark_response",
+    "CARRIER_VOCAB",
 ]

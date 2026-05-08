@@ -222,10 +222,19 @@ class LoCoMoDriver:
                     f"category={q.category} evidence={q.evidence} text={q.question}",
                     flush=True,
                 )
-            answer = self.qa_responder(q, result.memory_snapshot_final)
-            qa_trace = getattr(self.qa_responder, "last_trace", None)
-            if not isinstance(qa_trace, dict):
-                qa_trace = build_locomo_qa_trace(q, result.memory_snapshot_final)
+            # Per-backend canonical retrieval: qa_context returns either
+            # mode=context (rendered memory text) or mode=answer (backend
+            # already produced the final answer itself).
+            ctx = self.wm.backend.qa_context(q.question, k=10)
+            if ctx.get("mode") == "answer":
+                answer = (ctx.get("text") or "").strip()
+                qa_trace = {"context": "", "context_chars": 0, "mode": "answer"}
+            else:
+                context_text = ctx.get("text") or ""
+                answer = self.qa_responder(q, context_text)
+                qa_trace = getattr(self.qa_responder, "last_trace", None)
+                if not isinstance(qa_trace, dict):
+                    qa_trace = build_locomo_qa_trace(q, result.memory_snapshot_final)
             f1 = score_one(answer, q.answer, q.category)
             bleu = bleu1(answer, q.answer)
             rouge = rouge_l(answer, q.answer)
@@ -616,19 +625,35 @@ class LoCoMoDriver:
                 f"speaker={speaker} dia_ids={dia_ids} text={preview}",
                 flush=True,
             )
+        # Native LLM-hook architecture: watermark bits are embedded
+        # inside backend.apply() via SDK-internal LLM-call interception.
+        # Driver hands the event text to backend.apply, audits accumulate
+        # in self.wm.audits, we slice the new ones for this event.
+        self.wm.set_event_context(
+            dia_ids=list(dia_ids),
+            session_index=session_index,
+            session_date_time=session_date_time,
+            speaker=speaker,
+            recent_dialog_ids=list(recent_dialog_ids),
+            source_label=source_label,
+        )
+        before = len(self.wm.audits)
+        operation = {
+            "op": "add_memory",
+            "text": event_text,
+            "dia_ids": list(dia_ids),
+            "session_index": session_index,
+            "session_date_time": session_date_time,
+            "speaker": speaker,
+        }
         try:
-            evolve_result = self.wm.evolve(
-                event_text,
-                recent_dialog_ids=recent_dialog_ids,
-                retrieved_memory_ids=None,
-                dia_ids=dia_ids,
-                session_index=session_index,
-                speaker=speaker,
-                session_date_time=session_date_time,
-            )
-        except ValueError as exc:
+            record = self.wm.backend.apply(operation)
+        except Exception as exc:
             if self.progress:
-                print(f"[evolve:{label}:fail] reason=acceptance_fail", flush=True)
+                print(
+                    f"[evolve:{label}:fail] reason={exc.__class__.__name__}",
+                    flush=True,
+                )
             result.extracted_events.append(
                 {
                     "session": session_index,
@@ -641,18 +666,15 @@ class LoCoMoDriver:
             )
             self.wm.clear_event_context()
             return
-        if evolve_result.decision is not None:
-            result.decisions.append(evolve_result.decision)
-        if evolve_result.audit is not None:
-            result.audits.append(evolve_result.audit)
-        record = evolve_result.memory_record
-        audit = evolve_result.audit
+        finally:
+            self.wm.clear_event_context()
+
+        new_audits = self.wm.audits[before:]
+        bits_for_event = sum(a.bits_embedded for a in new_audits)
         if self.progress:
             print(
-                f"[evolve:{label}:done] tau={audit.tau if audit else ''} "
-                f"candidates={len(evolve_result.decision.candidates) if evolve_result.decision else 0} "
-                f"bits={audit.bits_embedded if audit else 0} "
-                f"selected={audit.selected_candidate_id if audit else ''} "
+                f"[evolve:{label}:done] llm_calls={len(new_audits)} "
+                f"bits={bits_for_event} "
                 f"record_id={record.get('id') if isinstance(record, dict) else ''}",
                 flush=True,
             )

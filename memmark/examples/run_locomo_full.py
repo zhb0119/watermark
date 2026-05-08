@@ -1,18 +1,24 @@
-"""End-to-end smoke for MemMark on LoCoMo.
+"""End-to-end runner for MemMark on LoCoMo.
 
-Runs all 5 RQs (utility / capacity / R1+R2+R3 / robustness / integrity)
-on a single LoCoMo conversation. Default backend is JsonMemoryStore so
-this works with no external services; pass `--backend cognee|amem|graphiti`
-to use the real SDK once the corresponding service is up.
+Two LLM modes (the diff that turns this from a smoke into a paper run):
 
-Usage:
+  --llm-mode stub  (default)  — extractor / carrier / QA all rule-based.
+                                Zero API cost; smoke only.
+  --llm-mode real             — LLM抽事实 + LLM 生成/打分候选 + LLM 答 QA.
+                                这是"图里那 9 步"真实路径,跑 paper 用这个.
+
+Backends:
+  --backend json|amem|cognee|graphiti
+
+Example (paper-quality 1 cell):
+
+    export MEMMARK_API_KEY=...  MEMMARK_BASE_URL=...  MEMMARK_MODEL=...
     python -m memmark.examples.run_locomo_full \\
-        --locomo /Users/.../locomo/data/locomo10.json \\
+        --llm-mode real \\
+        --backend amem \\
         --conversation 0 \\
-        --max-sessions 2 \\
-        --max-qa 20 \\
-        --backend json \\
-        --output /tmp/memmark_locomo.json
+        --baselines watermark no_watermark signed_metadata_only \\
+        --output ./results/conv0_amem_real.json
 """
 
 from __future__ import annotations
@@ -22,19 +28,12 @@ import json
 import os
 from dataclasses import asdict, is_dataclass
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional
 
 from memmark.backends import JsonMemoryStore
 from memmark.baselines import build_baseline
 from memmark.benchmarks.locomo import LoCoMoDriver, load_locomo
 from memmark.benchmarks.locomo.driver import keyword_memory_extractor
-from memmark.experiments import (
-    run_rq1_utility,
-    run_rq2_capacity,
-    run_rq3_in_record,
-    run_rq4_robustness,
-    run_rq5_integrity,
-)
 
 
 BASELINE_LABELS = ("watermark", "no_watermark", "signed_metadata_only", "random_replace")
@@ -47,8 +46,18 @@ def build_parser() -> argparse.ArgumentParser:
         default=os.getenv("MEMMARK_LOCOMO_PATH", "locomo/data/locomo10.json"),
     )
     parser.add_argument("--conversation", type=int, default=0)
-    parser.add_argument("--max-sessions", type=int, default=2)
-    parser.add_argument("--max-qa", type=int, default=20)
+    parser.add_argument(
+        "--max-sessions",
+        type=int,
+        default=2,
+        help="Cap sessions to keep smoke fast. Pass a large value (e.g. 999) for full LoCoMo.",
+    )
+    parser.add_argument(
+        "--max-qa",
+        type=int,
+        default=20,
+        help="Cap QA per conversation. Pass 9999 for full LoCoMo.",
+    )
     parser.add_argument(
         "--backend",
         choices=("json", "cognee", "amem", "graphiti"),
@@ -66,6 +75,25 @@ def build_parser() -> argparse.ArgumentParser:
         default=os.getenv("MEMMARK_KEY", "memmark-default-dev-key"),
     )
     parser.add_argument("--output", default="memmark_locomo_results.json")
+    parser.add_argument(
+        "--llm-mode",
+        choices=("stub", "real"),
+        default="stub",
+        help=(
+            "stub = rule-based extractor / static paraphrase carriers / "
+            "substring QA judge (zero API cost, smoke only). "
+            "real = LLM extractor + LLMCarrierPlanner + LLM QA responder. "
+            "Required for paper numbers."
+        ),
+    )
+    parser.add_argument(
+        "--async-assess",
+        action="store_true",
+        help=(
+            "(real mode) fan out the 3 carrier-feasibility prompts in parallel "
+            "via AsyncOpenAIChatClient. ~2x speedup."
+        ),
+    )
     return parser
 
 
@@ -80,9 +108,16 @@ def main() -> None:
         )
     conv = conversations[args.conversation]
 
+    # Build LLM client + extractor + carrier planner + QA responder once,
+    # share across baselines.
+    llm_client, extractor, planner_factory, qa_responder, qa_judge = _build_llm_layer(
+        args.llm_mode, async_assess=args.async_assess
+    )
+
     runs = {}
     for label in args.baselines:
         backend = _build_backend(args.backend)
+        carrier_planner = planner_factory() if planner_factory else None
         wm = build_baseline(
             label,
             backend=backend,
@@ -91,10 +126,13 @@ def main() -> None:
             user_id="memmark-user",
             session_id=f"locomo-{conv.sample_id}-{label}",
             secret_key=args.secret_key,
+            carrier_planner=carrier_planner,
         )
         driver = LoCoMoDriver(
             watermarker=wm,
-            memory_extractor=keyword_memory_extractor,
+            memory_extractor=extractor,
+            qa_responder=qa_responder,
+            qa_judge=qa_judge,
             max_sessions=args.max_sessions,
             max_qa=args.max_qa,
         )
@@ -106,34 +144,34 @@ def main() -> None:
             f"qa={len(result.qa_predictions)} acc={result.qa_accuracy:.3f}"
         )
 
-    # RQ1 — Utility
-    rq1 = run_rq1_utility(runs=runs)
+    # Lazy-import RQ runners (they pull torch via decoder→AgentMark)
+    from memmark.experiments import (
+        run_rq1_utility,
+        run_rq2_capacity,
+        run_rq3_in_record,
+        run_rq4_robustness,
+        run_rq5_integrity,
+    )
 
-    # RQ2 — Capacity (use the watermark run as the headline; report all)
+    rq1 = run_rq1_utility(runs=runs)
     rq2 = {label: run_rq2_capacity(r) for label, r in runs.items()}
 
-    # RQ3 — R1/R2/R3 verification (only meaningful with watermark mode)
     rq3 = {}
     if "watermark" in runs:
         rq3["watermark"] = run_rq3_in_record(
-            driver_result=runs["watermark"],
-            secret_key=args.secret_key,
+            driver_result=runs["watermark"], secret_key=args.secret_key
         )
     if "signed_metadata_only" in runs:
         rq3["signed_metadata_only"] = run_rq3_in_record(
-            driver_result=runs["signed_metadata_only"],
-            secret_key=args.secret_key,
+            driver_result=runs["signed_metadata_only"], secret_key=args.secret_key
         )
 
-    # RQ4 — robustness against memory-specific attacks
     rq4 = {}
     if "watermark" in runs:
         rq4["watermark"] = run_rq4_robustness(
-            driver_result=runs["watermark"],
-            secret_key=args.secret_key,
+            driver_result=runs["watermark"], secret_key=args.secret_key
         )
 
-    # RQ5 — integrity
     rq5 = {label: run_rq5_integrity(r) for label, r in runs.items()}
 
     out: Dict[str, Any] = {
@@ -157,6 +195,188 @@ def main() -> None:
         report = rq3["watermark"]
         print("\n=== Headline (R3 In-Record Attribution) ===")
         print(json.dumps(_to_jsonable(report), indent=2, ensure_ascii=False))
+
+
+def _build_llm_layer(mode: str, *, async_assess: bool):
+    """Return (llm_client, extractor, planner_factory, qa_responder, qa_judge)."""
+
+    if mode == "stub":
+        return None, keyword_memory_extractor, None, None, None
+
+    # mode == "real"
+    from memmark.carriers.planner import LLMCarrierPlanner
+    from memmark.carriers.semantic_realization import SemanticRealizationCarrier
+    from memmark.llm import OpenAIChatClient
+
+    if async_assess:
+        from memmark.llm import AsyncOpenAIChatClient
+
+        llm_client = AsyncOpenAIChatClient()
+    else:
+        llm_client = OpenAIChatClient()
+
+    extractor = _make_llm_extractor(llm_client)
+    fallback = SemanticRealizationCarrier()
+
+    def planner_factory():
+        return LLMCarrierPlanner(
+            llm_client=llm_client,
+            fallback_carrier=fallback,
+            merge_gen_and_score=True,
+            async_assess=async_assess,
+        )
+
+    qa_responder = _make_llm_qa_responder(llm_client)
+    qa_judge = _make_llm_qa_judge(llm_client)
+    return llm_client, extractor, planner_factory, qa_responder, qa_judge
+
+
+def _make_llm_extractor(llm_client):
+    """Step 3 in the diagram: LLM extracts durable facts from a turn."""
+
+    def extractor(turn, session_summary):
+        text = (turn.text or "").strip()
+        if not text:
+            return []
+        prompt = [
+            {
+                "role": "system",
+                "content": (
+                    "Extract durable long-term memory facts from this dialog turn. "
+                    "Include stable preferences, plans, identity, dated events, "
+                    "concrete numbers, locations. Skip greetings / chitchat. "
+                    'Return strict JSON array of strings (e.g. ["..."]). '
+                    "Return [] if nothing durable."
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"Speaker: {turn.speaker}\n"
+                    f"DiaID: {turn.dia_id}\n"
+                    f"Text: {text}\n"
+                    f"Session summary: {session_summary or '(none)'}"
+                ),
+            },
+        ]
+        try:
+            raw = llm_client.complete(prompt, temperature=0.0)
+        except Exception:
+            return []
+        return _parse_str_array(raw)
+
+    return extractor
+
+
+def _make_llm_qa_responder(llm_client):
+    """Step 8 in the diagram: answer QA using ONLY the memory snapshot."""
+
+    def responder(question, memory_snapshot):
+        prompt = [
+            {
+                "role": "system",
+                "content": (
+                    "You are a forensic auditor answering questions ONLY from "
+                    "the long-term memory snapshot below. Be concise. If the "
+                    "answer is not in memory, reply exactly: I don't know."
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    "Memory snapshot (JSON):\n"
+                    f"{json.dumps(memory_snapshot, ensure_ascii=False)[:6000]}\n\n"
+                    f"Question: {question.question}\n"
+                    "Answer (concise):"
+                ),
+            },
+        ]
+        try:
+            return llm_client.complete(prompt, temperature=0.0).strip()
+        except Exception:
+            return ""
+
+    return responder
+
+
+def _make_llm_qa_judge(llm_client):
+    """LLM-as-judge for fuzzy match against gold answer.
+
+    Falls back to simple substring match if the LLM call fails.
+    """
+
+    def judge(question, answer):
+        if not answer:
+            return False
+        gold = (question.answer or "").strip()
+        if not gold:
+            return False
+        # Cheap pre-check: exact / substring
+        if gold.lower() in answer.lower() or answer.lower() in gold.lower():
+            return True
+        prompt = [
+            {
+                "role": "system",
+                "content": (
+                    "You judge whether a predicted answer is consistent with the gold answer. "
+                    "Return strict JSON: {\"correct\": true} or {\"correct\": false}."
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"Question: {question.question}\n"
+                    f"Gold: {gold}\n"
+                    f"Predicted: {answer}"
+                ),
+            },
+        ]
+        try:
+            raw = llm_client.complete(prompt, temperature=0.0)
+            parsed = _parse_json_obj(raw)
+            return bool(parsed.get("correct"))
+        except Exception:
+            return False
+
+    return judge
+
+
+def _parse_str_array(raw: str) -> List[str]:
+    text = (raw or "").strip()
+    if not text:
+        return []
+    start = text.find("[")
+    end = text.rfind("]")
+    if start < 0 or end < start:
+        return []
+    try:
+        data = json.loads(text[start : end + 1])
+    except json.JSONDecodeError:
+        return []
+    out: List[str] = []
+    if isinstance(data, list):
+        for item in data:
+            if isinstance(item, str) and item.strip():
+                out.append(item.strip())
+            elif isinstance(item, dict):
+                v = item.get("text") or item.get("fact") or item.get("memory")
+                if isinstance(v, str) and v.strip():
+                    out.append(v.strip())
+    return out
+
+
+def _parse_json_obj(raw: str) -> dict:
+    text = (raw or "").strip()
+    if not text:
+        return {}
+    start = text.find("{")
+    end = text.rfind("}")
+    if start < 0 or end < start:
+        return {}
+    try:
+        return json.loads(text[start : end + 1])
+    except json.JSONDecodeError:
+        return {}
 
 
 def _build_backend(name: str):

@@ -3,49 +3,60 @@
 
 ## 1. Introduction
 
-### 1.1 Long-Term Memory Has Become the Agent
+### 1.1 Provenance-Aware Memory Is Already a Hot Topic — and Bound to Honest Writers
 
-现代 agent 的行为越来越不取决于它的权重或它的 system prompt,而取决于它的长期记忆。一个陪伴型 agent 在用户使用三个月后,其差异化价值几乎完全来自累积下来的偏好、人际关系、过往决定;一个跨 session 的 coding agent 之所以比单次 LLM call 强,是因为它记得这个仓库的约定、用户上次踩过的坑、上次重构的中间状态;一个企业知识助手最有 IP 价值的部分不是它跑的 LLM,而是它在内部多 session 演化出的那张关于业务对象、决策、规则的 memory 网络。
+为长期记忆加 provenance 已经是一条活跃的研究线。**TierMem** 显式给 memory 加 provenance 链 + immutable source anchoring,**MemOS** 的 ``MemCube`` 抽象自带 versioning / origin / lifecycle 字段,**多数企业部署**都会在 memory record 上 stamp tenant ID / write timestamp / source agent identifier。在受监管 / 多租户场景下,这条线的实现细节差异不小,但在结构上它们共享同一个**前提**:
 
-这一观察并不新颖,新的是记忆在 agent 价值堆栈中的位置。LLM 权重昂贵但同质化;prompt 与 system message 极易被复制但本身轻量;真正既昂贵、又独特、又持续累积的一层,是 long-term memory。它由用户与 agent 在很多个 session 中共同演化出来,带有大量该 agent 系统独有的组织结构与决策痕迹,而且 —— 这是关键 —— 它可以被导出、迁移、蒸馏、跨系统复用,以一种 LLM 权重做不到的轻便程度。
+> 写入方诚实,metadata 字段等于事实。
 
-### 1.2 当 Memory 离开它被生成的系统
+换句话说,provenance 是 "我说我是谁"。在 in-system 部署、可信运维下这个前提合理 —— DB 写权限有限,审计运营层兜底。问题是,memory 在 agent 价值堆栈里**既是最贵的一层、又是最容易脱离原系统的一层**(导出一份 A-MEM note 库或 Graphiti graph dump 在工程上几乎没有摩擦),一旦它走出原系统,这个前提立刻塌掉。
 
-正因为 memory 又是 agent 最有价值、又是最可移植的一层,它也是最容易脱离原生系统的一层。导出一份 A-MEM 的 note 数据库,或者把 Graphiti 的 temporal graph dump 出来,在工程上几乎没有摩擦。
+### 1.2 But the Attacker Is the Writer
 
-这一点带来直接的现实代价。memory 一旦失去出处,IP 索赔无据可查,投毒事故责任主体追不回,受监管部署里 "这份 memory 由某个合规系统演化得到" 也无法独立验证。这就引出一个在传统 agent 框架下很少被认真问过的问题:
+memory 离开原系统、出现在攻击者手里的瞬间,**所有 metadata 字段对持有 snapshot 的人来说都是可写的**。攻击者可以:
 
-> 当一份长期记忆出现在我面前,我能不能证明它是被某一个特定 agent 系统演化出来的?
+- 把自己的 memory stamp 上 ``"by Acme Agent v3"`` 主张所有权
+- 把我们的 memory 上 ``source_agent`` / ``tenant_id`` 等字段抹掉、改写,声称是他自己演化出来的
+- 给伪造的、注入有毒数据的 memory 同样填上看似合规的 provenance 链
+- 把 memory system 自身的 changelog (A-MEM evolve 历史、Graphiti fact invalidation 链) 整段重写 —— 它们与 memory 数据本身存于同一个图 / 向量库,无 cryptographic integrity
 
-这个问题在当前的工程实践下基本无法回答。memory system 自身的 changelog (A-MEM 的 evolve 历史、Graphiti 的 fact invalidation 链) 只能告诉我们 "某次写入发生过",而它们与 memory 数据本身存于同一个图 / 向量库,既无 cryptographic integrity,也不与外部 audit 服务联动 —— 在默认部署形态下,持有 DB 写权限即可静默改写。更关键的是,这些 changelog 在 memory 被复制 / 二次封装出去之后一定会被剥掉。常规审计日志同样只证明事件发生,不证明事件来自哪个带私钥的系统。
+也就是说,**任何"靠填字段"的 provenance,在 adversarial-storage 场景下原理上不成立**。要让 provenance 在敌手控制 memory store 的场景下保住,需要一种**无法仅通过填字段伪造**的 attribution。
 
-存在一类做 LLM 输出层水印的工作 (token-level watermark),也存在一类做 agent 可见行为水印的工作 (在 tool call / planning 决策上嵌 watermark),但它们都依赖一个在我们这个场景里几乎一定会失效的前提:验证时拿得到原始的可见输出或 action trajectory。问题在于,memory 大多数的演化根本不发生在可见输出上 —— 哪条 note 被更新、新事实链接到哪个已有 entity、同一事件被写成哪个等价表述,这些决策完全发生在 agent 的内部状态里;而当 memory 被外泄或迁移之后,可见 trajectory 一定先于 memory 被丢弃。
+token-level LLM 文本水印与 agent 可见行为水印 (在 tool call / planning 决策上嵌 watermark) 都不解决这个问题:它们假设验证时拿得到原始的可见输出或 action trajectory,而 memory 大多数演化根本不发生在可见输出上 —— 哪条 note 被更新、新事实链接到哪个已有 entity、同一事件被写成哪个等价表述,这些决策完全发生在 agent 的内部状态里;而当 memory 被外泄或迁移之后,可见 trajectory 一定先于 memory 被丢弃。
 
-换句话说:最有取证价值的场景里,可见行为已经没了,只剩下 memory 本身。这是现有 watermark 工作没有覆盖的位置,处于不同的层。我们留到 §10 详细比较,这里只指出这个 layer gap 的存在。
+换句话说:最有取证价值的场景里,可见行为已经没了,**只剩下 memory 本身,而 memory 上的 metadata 又被攻击者控制**。这是现有 watermark / provenance 工作都没有覆盖的位置。
 
-### 1.3 我们的视角:State-Evolution Attribution
+### 1.3 把 Attribution 嵌进 Memory 演化本身的 Keyed 决策
 
-本文的出发点是把 memory 的演化看作一条与可见行为并行、但独立存在的决策序列。每一次 memory 写入,实际上是 agent 在以下三个维度上做选择:
+我们的回答是把 attribution 嵌到 memory 演化本身的 keyed 决策里 —— 让 attribution **不再是字段,而是行为痕迹**。
+
+每一次 memory 写入,实际上是 agent 在以下三个维度上做选择:
 
 - **更新哪一条已有记忆** —— 多条历史 note / fact edge 都可能与新信息相关
 - **链接到哪一个已有对象** —— 新内容可以挂到不同的 entity / cluster / episode
 - **以哪一个等价版本写下** —— 同一事实可以用不同但语义等价的措辞、tag、edge label 表达
 
-这些决策有几个让 watermark 自然落地的性质。第一,它们各自都有非平凡的候选空间:在一个真实运行的 memory system 里,它们大多数 turn 都同时存在多个合理选项,而不是只有一个唯一正确答案。第二,在这些等价候选之间做不同的选择不会破坏 memory 的 utility:无论挂到哪个等价的 entity,无论用哪个等价的 phrasing,下游 retrieval 和 QA 的正确性应该都是接受的。第三,这些决策完整保留在 memory 自身的状态里:被更新的是哪条、链接到了哪个、写成了哪个版本,这些都是 memory snapshot 直接可读的事实。
+这三类决策有几个共同性质:**它们各自都有非平凡的候选空间**(真实 memory system 里多数 turn 都同时存在多个合理选项);**在等价候选之间做不同的选择不破坏 memory 的 utility**(无论挂到哪个等价的 entity,无论用哪个等价的 phrasing,下游 retrieval 与 QA 都是接受的);**这些决策完整保留在 memory 自身的状态里**(被更新的是哪条、链接到了哪个、写成了哪个版本,都是 memory snapshot 直接可读的事实)。
 
-把水印嵌进这条 latent state-evolution 序列,我们就得到一种新的归因目标:不是 "谁说出了这句话",也不是 "谁调用了这个工具",而是
+我们把 PRF key 嵌进这条 latent state-evolution 决策序列:每个决策点的 keyed pick 都由 ``HMAC(K, ctx_t)`` 决定。**metadata 的可信度不再来自 "我们说它是真的",而来自 "用 PRF key 重放采样器能复现这条选择序列"**。这意味着:
 
-> 谁演化出了这份长期记忆。
+- 攻击者就算把所有 metadata 字段重写,只要 memory 内容没改干净,选择序列仍能被 PRF key 重放出来 → 我们仍能归因
+- 反过来,他要伪造一份 memory 声称是我们的,必须不仅写对内容、还要让选择序列在我们 key 下重放成功 —— 这在不知道 key 的前提下计算上不可行
 
-我们称之为 **state-evolution attribution**。
+我们称之为 **state-evolution attribution**:**谁演化出了这份长期记忆**。
 
-### 1.4 Headline: In-Record Attribution Verification
+### 1.4 Headline: In-Record Attribution Verification (R3)
 
-State-evolution attribution 单独并不构成完整的故事。如果验证仍然要求一份完整的外部 audit log,它就只是把 watermark 从 action 层平移到 memory 层。我们真正想兑现的是一个更强的承诺:
+State-evolution attribution 要在最坏情况下兑现:**memory 已经离开原系统、原系统的 audit log 已不可得、metadata 字段已被攻击者改写或抹除**。我们称这一档为 **R3**,本文的 headline result。
 
-> 仅凭 memory snapshot 本身,就足以完成归因验证。
+具体地,我们把 watermark 的 keyed selection 与一个 commit-then-reveal 的密码学结构绑定:每次决策的 commitment 与对应的 reveal record 直接随 memory record 同表落地,session 级 Merkle root 的签名 anchor 也写在 snapshot 内部 (§8)。R3 验证流程对持有 PRF key 的验证方:
 
-为此,我们把 watermark 的 keyed selection 与一个 commit-then-reveal 的密码学审计结构绑定:每次决策的 commitment 与对应的 reveal record 直接随 memory record 同表落地,session 级 Merkle root 的签名 anchor 也写在 snapshot 内部 (§8)。这意味着,即使这份 memory 已经被导出、二次封装、跨系统迁移,只要还存在,持有 PRF key 的验证方就可以独立做出归因判断,既不依赖 memory system 数据库的诚实性,也不依赖任何外部 audit store 的可得性。我们把这一验证模式称为 **In-Record Attribution Verification (R3)**,它是本文的 headline result,在 §9.5 中作为论文的核心实验给出。
+1. 从 snapshot 抽取 ``(record, reveal)`` 对
+2. 用 PRF key 重放 keyed 采样器,核对每个 reveal 是否落在 keyed 区间
+3. 用 anchor 校验 reveal 集属于原始 session 的 Merkle tree
+4. 聚合命中的 keyed 决策,decode bit stream
+
+**全程不依赖 memory system 数据库的诚实性,也不依赖任何外部 audit store 的可得性**。即使攻击者能写所有 memory record 的 metadata 字段、抹掉原 changelog,只要他不知道 key,他就(a)无法把伪造 memory 的选择序列匹配到我们的 key,(b)无法在重写 memory 内容后让原 reveal 仍然 keyed-valid。R3 在 §9.5 作为论文核心实验给出,与 ``signed-metadata-only`` baseline 直接对照 —— 后者就是当前 provenance-aware memory 范式 (TierMem / MemOS) 在 R3 下的退化。
 
 ### 1.5 Contributions
 

@@ -1,0 +1,372 @@
+{
+  "config": {
+    "locomo": "C:\\桌面\\agent-mem\\watermark\\locomo\\data\\locomo10.json",
+    "conversation": 0,
+    "max_sessions": 1,
+    "max_qa": 3,
+    "backend": "amem",
+    "baselines": [
+      "watermark"
+    ],
+    "payload_bits": "1011010011101101001110110100111011010011",
+    "secret_key": "memmark-default-dev-key",
+    "amem_model_name": "C:\\桌面\\models\\all-MiniLM-L6-v2",
+    "output": ".\\results\\amem\\conv0_real_small.json",
+    "llm_mode": "real",
+    "async_assess": false,
+    "progress": true
+  },
+  "conversation": {
+    "sample_id": "conv-26",
+    "session_count": 19,
+    "qa_count": 199
+  },
+  "rq1_utility": {
+    "rows": [
+      {
+        "label": "watermark",
+        "qa_accuracy": 0.0,
+        "qa_count": 3,
+        "memory_count": 18,
+        "write_failures": 0,
+        "bits_embedded": 27,
+        "capacity_bits_per_decision": 1.5
+      }
+    ],
+    "deltas": {}
+  },
+  "rq2_capacity": {
+    "watermark": {
+      "overall": {
+        "decisions": 18.0,
+        "bits_embedded": 27.0,
+        "bits_per_decision": 1.5,
+        "avg_candidate_set_size": 3.3333333333333335,
+        "avg_entropy": 1.6600257357693968,
+        "acceptance_rate": 1.0
+      },
+      "by_carrier": {
+        "semantic_realization": {
+          "decisions": 18.0,
+          "bits_embedded": 27.0,
+          "bits_per_decision": 1.5,
+          "avg_candidate_set_size": 3.3333333333333335,
+          "avg_entropy": 1.6600257357693968,
+          "acceptance_rate": 1.0
+        }
+      }
+    }
+  },
+  "rq3_in_record": {
+    "watermark": {
+      "r1": {
+        "bit_recovery_rate": 1.0,
+        "commitment_pass_rate": 1.0,
+        "bits_total": 27.0,
+        "bits_recovered": 27.0
+      },
+      "r2": {
+        "r=0.9": {
+          "kept_leaves": 16.0,
+          "anchor_signature_valid": 1.0,
+          "root_matches": 1.0,
+          "bit_recovery_rate": 0.9259259259259259,
+          "bits_recovered": 25.0,
+          "bits_total": 27.0
+        },
+        "r=0.7": {
+          "kept_leaves": 13.0,
+          "anchor_signature_valid": 1.0,
+          "root_matches": 1.0,
+          "bit_recovery_rate": 0.6666666666666666,
+          "bits_recovered": 18.0,
+          "bits_total": 27.0
+        },
+        "r=0.5": {
+          "kept_leaves": 9.0,
+          "anchor_signature_valid": 1.0,
+          "root_matches": 1.0,
+          "bit_recovery_rate": 0.5925925925925926,
+          "bits_recovered": 16.0,
+          "bits_total": 27.0
+        },
+        "r=0.3": {
+          "kept_leaves": 5.0,
+          "anchor_signature_valid": 1.0,
+          "root_matches": 1.0,
+          "bit_recovery_rate": 0.2962962962962963,
+          "bits_recovered": 8.0,
+          "bits_total": 27.0
+        },
+        "r=0.1": {
+          "kept_leaves": 2.0,
+          "anchor_signature_valid": 1.0,
+          "root_matches": 1.0,
+          "bit_recovery_rate": 0.1111111111111111,
+          "bits_recovered": 3.0,
+          "bits_total": 27.0
+        }
+      },
+      "r3": {
+        "anchor_signature_valid": 1.0,
+        "root_matches": 1.0,
+        "bit_recovery_rate": 1.0,
+        "bits_recovered": 27.0,
+        "bits_total": 27.0
+      },
+      "r3_wrong_key": {
+        "anchor_signature_valid": 0.0,
+        "bit_recovery_rate": 0.2962962962962963
+      },
+      "r3_carrier_breakdown": {
+        "semantic_realization": {
+          "leaves": 18,
+          "bits_total": 27,
+          "bits_recovered": 27,
+          "bit_recovery_rate": 1.0
+        }
+      }
+    }
+  },
+  "rq4_robustness": {
+    "watermark": {
+      "pre_recovery": 1.0,
+      "outcomes": [
+        {
+          "name": "compaction",
+          "strength": 0.1,
+          "leaves_affected": 2,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 0.8518518518518519,
+          "tamper_detection_rate": 0.1111111111111111
+        },
+        {
+          "name": "compaction",
+          "strength": 0.3,
+          "leaves_affected": 5,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 0.6296296296296297,
+          "tamper_detection_rate": 0.2777777777777778
+        },
+        {
+          "name": "compaction",
+          "strength": 0.5,
+          "leaves_affected": 9,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 0.4444444444444444,
+          "tamper_detection_rate": 0.5
+        },
+        {
+          "name": "supersession",
+          "strength": 0.1,
+          "leaves_affected": 2,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 0.9259259259259259,
+          "tamper_detection_rate": 0.1111111111111111
+        },
+        {
+          "name": "supersession",
+          "strength": 0.3,
+          "leaves_affected": 5,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 0.7037037037037037,
+          "tamper_detection_rate": 0.2777777777777778
+        },
+        {
+          "name": "supersession",
+          "strength": 0.5,
+          "leaves_affected": 9,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 0.4444444444444444,
+          "tamper_detection_rate": 0.5
+        },
+        {
+          "name": "pruning",
+          "strength": 0.1,
+          "leaves_affected": 2,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 0.0,
+          "tamper_detection_rate": 0.0
+        },
+        {
+          "name": "pruning",
+          "strength": 0.3,
+          "leaves_affected": 5,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 0.0,
+          "tamper_detection_rate": 0.0
+        },
+        {
+          "name": "pruning",
+          "strength": 0.5,
+          "leaves_affected": 9,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 0.0,
+          "tamper_detection_rate": 0.0
+        },
+        {
+          "name": "manual_edits",
+          "strength": 0.1,
+          "leaves_affected": 2,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 0.8518518518518519,
+          "tamper_detection_rate": 0.1111111111111111
+        },
+        {
+          "name": "manual_edits",
+          "strength": 0.3,
+          "leaves_affected": 5,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 0.7037037037037037,
+          "tamper_detection_rate": 0.2777777777777778
+        },
+        {
+          "name": "manual_edits",
+          "strength": 0.5,
+          "leaves_affected": 9,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 0.5555555555555556,
+          "tamper_detection_rate": 0.5
+        },
+        {
+          "name": "dedup",
+          "strength": 0.1,
+          "leaves_affected": 1,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 0.0,
+          "tamper_detection_rate": 0.0
+        },
+        {
+          "name": "dedup",
+          "strength": 0.3,
+          "leaves_affected": 3,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 0.0,
+          "tamper_detection_rate": 0.0
+        },
+        {
+          "name": "dedup",
+          "strength": 0.5,
+          "leaves_affected": 4,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 0.0,
+          "tamper_detection_rate": 0.0
+        },
+        {
+          "name": "paraphrase_rewrite",
+          "strength": 0.1,
+          "leaves_affected": 2,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 0.8888888888888888,
+          "tamper_detection_rate": 0.1111111111111111
+        },
+        {
+          "name": "paraphrase_rewrite",
+          "strength": 0.3,
+          "leaves_affected": 5,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 0.7037037037037037,
+          "tamper_detection_rate": 0.2777777777777778
+        },
+        {
+          "name": "paraphrase_rewrite",
+          "strength": 0.5,
+          "leaves_affected": 9,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 0.4444444444444444,
+          "tamper_detection_rate": 0.5
+        },
+        {
+          "name": "poisoning",
+          "strength": 0.1,
+          "leaves_affected": 2,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 0.0,
+          "tamper_detection_rate": 0.1
+        },
+        {
+          "name": "poisoning",
+          "strength": 0.3,
+          "leaves_affected": 5,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 0.0,
+          "tamper_detection_rate": 0.21739130434782608
+        },
+        {
+          "name": "poisoning",
+          "strength": 0.5,
+          "leaves_affected": 9,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 0.0,
+          "tamper_detection_rate": 0.3333333333333333
+        },
+        {
+          "name": "edge_relabel",
+          "strength": 0.1,
+          "leaves_affected": 2,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 0.8888888888888888,
+          "tamper_detection_rate": 0.1111111111111111
+        },
+        {
+          "name": "edge_relabel",
+          "strength": 0.3,
+          "leaves_affected": 5,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 0.7777777777777778,
+          "tamper_detection_rate": 0.2777777777777778
+        },
+        {
+          "name": "edge_relabel",
+          "strength": 0.5,
+          "leaves_affected": 9,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 0.5555555555555556,
+          "tamper_detection_rate": 0.5
+        },
+        {
+          "name": "subgraph_reanchor",
+          "strength": 0.1,
+          "leaves_affected": 2,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 0.8888888888888888,
+          "tamper_detection_rate": 0.1111111111111111
+        },
+        {
+          "name": "subgraph_reanchor",
+          "strength": 0.3,
+          "leaves_affected": 5,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 0.6666666666666666,
+          "tamper_detection_rate": 0.2777777777777778
+        },
+        {
+          "name": "subgraph_reanchor",
+          "strength": 0.5,
+          "leaves_affected": 9,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 0.48148148148148145,
+          "tamper_detection_rate": 0.5
+        }
+      ]
+    }
+  },
+  "rq5_integrity": {
+    "watermark": {
+      "duplication_rate": 0.0,
+      "duplicate_count": 0,
+      "update_target_accuracy": 0.0,
+      "update_target_total": 0,
+      "update_target_correct": 0,
+      "link_target_total": 0,
+      "contradiction_rate": 0.0,
+      "overall_records": 18,
+      "by_carrier_counts": {
+        "semantic_realization": 18
+      },
+      "evidence_recall_mean": 0.0,
+      "evidence_required_qas": 3,
+      "qa_with_full_evidence": 0
+    }
+  }
+}

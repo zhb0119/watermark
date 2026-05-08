@@ -289,30 +289,58 @@ def make_locomo_qa_responder(
     bypass this responder entirely.
     """
 
-    def responder(question, context_text: str) -> str:
-        ctx = (context_text or "")[:max_chars]
-        if question.category == 5:
-            qa_template = QA_PROMPT_CAT_5
-        else:
-            qa_template = QA_PROMPT
-        user_prompt = ctx + qa_template.format(q=question.question)
-        messages = [
-            {
-                "role": "system",
-                "content": (
-                    "You are a careful question-answering assistant. "
-                    "Use ONLY the provided memory context. If the answer "
-                    "is not in the context, reply: 'No information available'."
-                ),
-            },
-            {"role": "user", "content": user_prompt},
-        ]
+    def responder(question, snapshot) -> str:
+        trace = build_locomo_qa_trace(
+            question,
+            snapshot,
+            memory_render=render,
+            max_chars=max_chars,
+        )
+        setattr(responder, "last_trace", trace)
         try:
-            return (llm_client.complete(messages, temperature=0.0) or "").strip()
-        except Exception:
+            answer = (llm_client.complete(trace["messages"], temperature=0.0) or "").strip()
+            trace["raw_response"] = answer
+            return answer
+        except Exception as exc:
+            trace["error"] = f"{type(exc).__name__}: {exc}"
             return ""
 
     return responder
+
+
+def build_locomo_qa_trace(
+    question,
+    snapshot,
+    *,
+    memory_render: Optional[Any] = None,
+    max_chars: int = 12000,
+):
+    render = memory_render or _default_render_memory
+    ctx = render(snapshot)[:max_chars]
+    if question.category == 5:
+        qa_template = QA_PROMPT_CAT_5
+    else:
+        qa_template = QA_PROMPT
+    user_prompt = ctx + qa_template.format(q=question.question)
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "You are a careful question-answering assistant. "
+                "Use ONLY the provided memory context. If the answer "
+                "is not in the context, reply: 'No information available'."
+            ),
+        },
+        {"role": "user", "content": user_prompt},
+    ]
+    return {
+        "context": ctx,
+        "context_chars": len(ctx),
+        "qa_template": qa_template,
+        "user_prompt": user_prompt,
+        "messages": messages,
+        "max_chars": max_chars,
+    }
 
 
 def make_locomo_qa_judge():

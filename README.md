@@ -164,14 +164,14 @@ watermark sampler 只看 `(C_t, p_t)`,因此论文里可以独立报告每类 ca
 建议结构：
 
 - `LLM`
-  生成 memory 候选及其概率。本项目固定使用两个 LLM:
-  - **DeepSeek v4 Pro** —— headline + cost 主线,与 `agentmark/proxy/server.py` 现有 DeepSeek 路径无缝衔接
+  驱动 memory system 内部的 evolution 决策(由各 backend 的 SDK 自行调用)。本项目固定使用两个 LLM:
+  - **DeepSeek v4 Pro** —— headline + cost 主线
   - **Qwen3.5-397B-A17B** —— reproducibility + open-weights 主线,确保 audit trace 可被独立重放
-  调用形态均为 OpenAI-compatible API。候选枚举阶段 `T=0.7`,scoring 阶段 `T=0.0`,统一开 JSON 模式以对齐 `agentmark/sdk/prompt_adapter.py` 的 `action_weights` 协议。
+  调用形态均为 OpenAI-compatible API。我们在每个 SDK 内部 LLM call 边界上拦截,做 n 次采样后 keyed pick(详见 §7)。
 - `Memory system`
   负责实际写入与检索,如 `A-MEM` / `Graphiti`。turn / session / agent identity / hooks 全由 backend 自身的 SDK 与 benchmark evaluation harness 协同提供,本项目不再额外引入 agent harness。
 - `Watermark selector`
-  用私钥控制的采样器,在候选中做可验证选择,`AgentMark`。
+  在每个被拦截的 LLM call 上,用私钥控制的 distribution-preserving binning sampler 在 n 个经验样本中做可验证选择(§7.2 给出 (C_t, p_t) 的构造,§7.3 陈述性质)。
 - `Audit store`
   记录可验证 trace。
 
@@ -314,25 +314,88 @@ MemoryAgentBench 官方信息：
 
 ## 7. 核心算法
 
-**watermark 嵌入机制直接复用 AgentMark**,不引入新的 sampling 算法。
+MemMark 在 memory carrier 上嵌入 watermark,需要解决三个问题:
 
-具体地,每次 §4.2.3 adapter 在一个 evolve 决策点产出三元组 `(C_t, p_t, ctx_t)` 后,直接调用 AgentMark 的 sampler:
+1. **Where to intercept** —— 第三方 memory SDK 是黑盒,watermark 应该挂在 SDK
+   流程的哪一层
+2. **How to construct (C_t, p_t)** —— SDK 内部 LLM call 输出的是开词表结构化
+   JSON,候选空间无界,API 不暴露 logprob;离散候选集 + 真 logprob 在此设定
+   下根本不存在
+3. **How to compose audits** —— 一条 memory event 触发 SDK 内部多次 LLM call,
+   多条 audit 如何组装成 lifecycle-survivable 的 attribution trace
 
-- [agentmark/sdk/watermarker.py](/Users/henry_mao/AgentMark/agentmark/sdk/watermarker.py:48) —— `AgentWatermarker.sample(probabilities, context, ...)`
-- [agentmark/core/watermark_sampler.py](/Users/henry_mao/AgentMark/agentmark/core/watermark_sampler.py:16) —— distribution-preserving binning + DRBG-driven keyed selection
-- [README_en.md](/Users/henry_mao/AgentMark/README_en.md:38) —— 算法细节与 capacity / utility 分析
+第 (3) 问题由 §9 解决。本节集中说 (1) 和 (2),分别对应**架构层贡献**与
+**数学层贡献**。
 
-- **输入端**(§4.2 / §4.2.3) —— 把 memory evolve 决策抽象成 sampler 能消费的 `(C_t, p_t, ctx_t)`
-- **输出端**(§9) —— 把 sampler 的 keyed selection 锁进 commitment + Merkle log,使 watermark 从 runtime-only 的归因机制升级为 lifecycle-survivable 的 attribution 证据(详见 §9.5)
+### 7.1 LLM-Call 边界拦截 — 架构层贡献
 
-### 7.1 Distribution-Preserving 性质 — 形式化提要
+关键观察:
 
-AgentMark sampler 在原 paper 中已证明:对单步决策 `(C_t, p_t)`,keyed sampling 后所选候选 `c*` 的边缘分布等于 `p_t`(即 `Pr[c* = c | K, ctx_t]_marg = p_t(c)`)。本项目把这一性质平移到 memory carrier 上,需要补两个针对 memory 场景的 lemma:
+> 每一次 SDK 内部 LLM call **本身就是一个 ε-equivalent 决策点**。
 
-- **Lemma 1 (Carrier-conditioned preservation)**: 对每一类 `τ ∈ {update, link, semantic}`,只要 §4.2.3 的 `score_candidates(C_t, ctx_t)` 给出的 `p_t` 与 backend 在不带 watermark 时的自然采样分布在 KL 距离上 ≤ ε,sampler 的输出在 marginal 上偏离 ≤ ε。这说明 utility delta 由 *adapter scoring 的近似质量* 主导,不是 watermark 本身。
-- **Lemma 2 (Cross-decision independence)**: 不同 turn 的 `(C_t, p_t, ctx_t)` 独立 keyed,Merkle log 的链接不引入额外的 marginal bias。这保证 capacity 加性。
+LLM 在 `T = 0.7` 下对同一 prompt 重复采样会产出多个语义等价但表述不同的合法
+JSON(不同 keyword 选词、不同 edge label、不同 contradiction target),都是
+backend 在不带 watermark 时本就会接受的输出。
 
-完整证明留 appendix(预计 ~2 页),复用 AgentMark 论文的 binning argument 与 DRBG security reduction;本项目只需说明 memory carrier 上的 candidate set 在大小、稀疏性、对称性方面与 AgentMark planning carrier 满足同样的前提条件。
+我们利用三个 SDK 共有的接口结构(LLM client 是构造时注入的可替换对象),
+在 `attach_sampler` 时 hot-swap 一个 wrapper,**SDK 源码零改动**:
+
+- A-MEM:替换 `AgenticMemorySystem.llm_controller`
+- Graphiti:替换 `Graphiti.llm_client`(继承 `LLMClient` ABC)
+
+→ 水印嵌进 backend 自己的 evolution 决策里,而不是叠在它旁边的外部 overlay。
+SDK 拿到的字符串是我们 keyed pick 的某一个 cluster 代表,但 SDK 不知情
+地按它继续运行 `add_note` / `add_episode` / contradiction detection 等下游。
+这是 backend-invariance 的物理基础。具体实现见
+[memmark/llm/watermarked.py](memmark/llm/watermarked.py:1)。
+
+### 7.2 开词表 → 经验候选集 — 数学层贡献
+
+memory SDK 内部 LLM call 输出是 unbounded 结构化 JSON,既没有显式离散候选集,
+也没有可获取的 logprob 分布。MemMark 把开词表问题归约到 binning sampler 能
+消费的离散输入:
+
+```
+i.i.d. 重复 n 次:c_i ~ LLM(prompt; T)
+JSON-canonical 聚类:{c_1, ..., c_n} → C_t       # |C_t| ≤ n,unique 合法输出
+经验概率:p_t(c) = |{i: c_i ∈ cluster(c)}| / n
+keyed pick:c* = sampler(C_t, p_t, ctx_t, K)
+```
+
+构造完成后,从 `(C_t, p_t)` 中按 key 挑一个候选是任何 distribution-preserving
+binning sampler 都能完成的标准操作;本项目调用
+[agentmark/core/watermark_sampler.py](/Users/henry_mao/AgentMark/agentmark/core/watermark_sampler.py)
+的 `sample_behavior_differential` 完成这一步。**贡献不在 sampler 本身,而在
+把无界开词表 LLM 输出归约为 sampler 能消费的离散候选集**(§7.2),以及
+紧接的 §7.3 性质陈述。
+
+### 7.3 性质陈述
+
+设 `p_t^*` 为 underlying LLM 在该 prompt 上的真边缘分布(对 ε-equivalence 等价类
+上的 marginal),`p_t^n` 为 n 次采样的经验分布。
+
+- **Lemma 1 (Empirical preservation)**: 给定 `p_t^n`,binning sampler 的
+  keyed pick 严格保 `p_t^n` 边缘;由 Hoeffding 不等式
+  `||p_t^n − p_t^*||_TV = O(1/√n)`,故所选候选 `c^*` 的 marginal 偏离 LLM
+  真分布 ≤ `O(1/√n)`。`n = 4` 在实证上(RQ1)足以使 utility 与 no-watermark
+  baseline 偏差落在噪声内 (Table X)。
+- **Lemma 2 (Composition across LLM cascade)**: backend 处理一条 memory
+  event 触发 K 次 LLM call,每次的 `ctx_t` 由
+  `{round, dia_ids, prompt_hash, previous_commitment}` 决定;HMAC nonce 在
+  各次决策上独立 → keyed pick 独立。capacity 在 K 上加性,marginal bias
+  不累积。
+- **Lemma 3 (Backend-invariant utility bound)**: Lemma 1 的 bound 只依赖
+  underlying LLM + n + T,与 backend 无关。这给 §10.1 的 cross-backend 对照
+  提供可解释的上界。
+
+完整证明留 appendix。Lemma 1 的 strict-preservation 半部用 binning 的标准
+论证,concentration 半部用 Hoeffding;Lemma 2 用 PRF independence;
+Lemma 3 是 Lemma 1 的 corollary。
+
+> **Limitation**:严格 distribution preservation 只在 `n → ∞` 时成立。对于
+> 天然离散小集合 (≤ 8) 的决策点(例:A-mem `process_memory.suggested_connections`
+> 从 nearest-neighbor 列表挑 ID),可改用 OpenAI `top_logprobs` 取真 logprob,
+> 免去经验近似。此 hybrid 变体留作 future work,不在 main result 内。
 
 
 ## 8. Memory Watermark 的输入与上下文
@@ -428,8 +491,8 @@ reveal_t = {
 `watermark_version` 必须把 LLM 身份完整记录,否则换模型重放就过不了 verification。本项目的两个固定取值:
 
 ```text
-agentmark-mem-v1::deepseek-v4-pro@<api-version>::T_score=0.0::T_enum=0.7::json_mode=true
-agentmark-mem-v1::qwen3.5-397b-a17b@<weights-hash>::T_score=0.0::T_enum=0.7::json_mode=true
+memmark-v1::deepseek-v4-pro@<api-version>::T_score=0.0::T_enum=0.7::json_mode=true
+memmark-v1::qwen3.5-397b-a17b@<weights-hash>::T_score=0.0::T_enum=0.7::json_mode=true
 ```
 
 `<api-version>` 用 vendor 返回的 `model` 字段,`<weights-hash>` 用 open-weights 模型的权重 SHA。这两个字符串都参与 §9.1 中 `commit_t` 的哈希,任一项变化都会让 commitment 失配。
@@ -590,7 +653,7 @@ MemMark 与五条研究线相关。**没有任何已有工作同时覆盖** *beh
 
 最相邻的工作。所有这些方法都在 *visible action* 层嵌水印,验证必须有 action trajectory:
 
-- **AgentMark** [`2601.03294`] —— planning / tool / subgoal 决策的 distribution-preserving keyed sampling。MemMark 直接复用其 sampler(§7);差别在 carrier:AgentMark 选 *做什么*,MemMark 选 *如何改 latent state*。
+- **AgentMark** [`2601.03294`] —— planning / tool / subgoal 决策的 distribution-preserving keyed sampling。MemMark 与之**层级不同**:AgentMark 解决 "已知 (C_t, p_t) 时如何按 key 挑",MemMark 解决 "在第三方 memory SDK 的开词表 LLM call 上 (C_t, p_t) 根本不存在,如何构造,挂在哪,多次 cascade 如何 compose"(§7.1 / §7.2)。两者关系是**MemMark 在 §7.2 内部把 AgentMark sampler 当一个离散 binning 组件调用**,不是 MemMark 是 AgentMark 的 carrier 扩展。
 - **Agent Guide** [`2504.05871`] —— 同框架,通过概率偏置引导高层行为决策。
 - **ActHook** (Watermarking LLM Agent Trajectories) [`2602.18700`] —— 在 trajectory dataset 中插入 hook actions,运行时由 secret key 触发。
 - **AGENTWM** (On Protecting Agentic Systems' IP via Watermarking) [`2602.08401`] —— 偏置语义等价 tool 执行路径的分布。
@@ -600,7 +663,7 @@ MemMark 与五条研究线相关。**没有任何已有工作同时覆盖** *beh
 - **Memory as Action** [`2510.12635`] —— 显式把 memory store / retrieve / update 当作 RL agent 的可学习动作。
 - **A-MAC: Adaptive Memory Admission Control** [`2603.04549`] —— memory write/admission 当作显式决策问题。
 
-如果接受 "memory ops = action" 的视角,MemMark 的 carrier 就只是 AgentMark 的扩展 action vocabulary。我们的真正差异不在 carrier 的存在性,而在 *验证证据* 的位置:**AgentMark / ActHook / AGENTWM as published 都假设 verifier 持有 action trajectory,而 forensic 场景里 trajectory 通常已被丢弃**;MemMark 把验证证据从外部 trajectory 转移到 *memory record 自身的 in-record sidecar*,这是工程层面的差异(见 §10.5 R3 In-Record Attribution Verification),不是 cryptographic impossibility 论证。
+即便接受 "memory ops 在抽象意义上属于 action" 的视角,MemMark 的实际定位仍然不是 carrier 扩展,而是三件 AgentMark / ActHook / AGENTWM 没做的事:(a) 在第三方 SDK 的内部 LLM call 边界上做拦截而非外部 overlay(§7.1);(b) 把开词表 LLM 输出归约为 binning sampler 可消费的离散输入(§7.2);(c) 把验证证据从外部 trajectory 转移到 **memory record 自身的 in-record sidecar**(§10.5 R3 In-Record Attribution Verification),解决 forensic 场景里 trajectory 已被丢弃的归因问题。前两条是这一节比较的方法都不需要面对的问题(它们假设 carrier 已知离散),第三条是工程层面的差异,不是 cryptographic impossibility 论证。
 
 ### 11.2 RAG / Corpus-Level Watermarking
 
@@ -669,7 +732,7 @@ MemMark 的独特点是同时勾上 **behavioral × memory layer × in-record ve
 **MemMark** 本质上是在做 **state-evolution attribution**：
 
 - 在 `A-MEM / Graphiti` 两种结构不同的 memory system 上,统一抽象出 backend-invariant 的 evolve carrier taxonomy (update / link / semantic),仅靠 ~200–300 行的 backend native API wrapper 接入,不引入外部 harness
-- 用 `AgentMark` 风格的 distribution-preserving sampling 把 watermark 嵌入 *latent state-transition* 决策(三类 carrier:update / link / semantic)
+- 在每个 SDK 内部 LLM call 边界上拦截,把开词表 LLM 输出归约为离散经验候选集 (§7.2),并用 distribution-preserving binning sampler 做 keyed pick,把 watermark 嵌入 *latent state-transition* 决策(三类 carrier:update / link / semantic)
 - 用 commitment + Merkle log 的 cryptographic audit trace 替代普通 JSON log,实现 tamper-evident、partial-verifiable 的归因
 - 用 `LoCoMo + LongMemEval + MemoryAgentBench` 三个 benchmark 跨 conversation / knowledge-update / incremental multi-turn 三类 regime 评估
 - 用 memory-specific 攻击模型 (compaction / dedup / supersession / paraphrase rewrite / pruning / poisoning / manual edits + KGMark-style edge relabel / subgraph reanchor) 取代 LLM 文本水印的通用扰动测试

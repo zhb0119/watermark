@@ -143,6 +143,7 @@ def main() -> None:
             qa_judge=qa_judge,
             max_sessions=args.max_sessions,
             max_qa=args.max_qa,
+            fact_extractor_llm=llm_client,
             progress=args.progress,
         )
         result = driver.run(conv)
@@ -284,6 +285,10 @@ def _run_details(result) -> Dict[str, Any]:
                 "qa_count": len(result.qa_predictions),
                 "qa_accuracy": result.qa_accuracy,
                 "qa_f1_mean": result.qa_f1_mean,
+                "qa_bleu1_mean": result.qa_bleu1_mean,
+                "qa_rougeL_mean": result.qa_rougeL_mean,
+                "qa_judge_accuracy": result.qa_judge_accuracy,
+                "qa_metrics_by_category": result.qa_metrics_by_category,
                 "memory_count": len(result.memory_snapshot_final),
             },
             "qa_predictions": result.qa_predictions,

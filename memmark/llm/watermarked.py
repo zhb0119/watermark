@@ -1,0 +1,552 @@
+"""Native LLM-level watermark hook (AgentMark-style self-reported weights).
+
+Each memory system (A-MEM / Graphiti) drives its own state-evolution
+decisions through *its own* internal LLM calls. We intercept those
+calls at the SDK's LLM-client boundary and use the AgentMark
+``action_weights`` pattern: the wrapper modifies the prompt to ask
+the LLM to emit *K candidate decisions plus self-reported weights*
+in one response, then runs the keyed binning sampler over
+``(candidates, weights)``. Bits are embedded directly in the LLM
+output the SDK consumes; the SDK is unaware.
+
+Two hooks, one shared core:
+
+  * :class:`WatermarkedSampler` — keyed-sample + audit + Merkle log.
+  * :class:`WatermarkedAMemController` — drop-in for A-mem's
+    ``LLMController``; appends AgentMark instruction to the prompt,
+    parses the wrapped response, returns the chosen ``decision``
+    JSON string.
+  * :func:`make_watermarked_graphiti_client` — subclasses Graphiti's
+    ``LLMClient`` ABC; dynamically wraps the SDK's Pydantic
+    ``response_model`` into ``Wrapped(candidates: List[Candidate],
+    thought: str)`` and returns the chosen ``decision`` dict.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import re
+from typing import Any, Dict, List, Tuple
+
+from memmark.core.commitment import make_commitment
+from memmark.core.context import derive_nonce, sha256_text
+from memmark.core.merkle_log import SessionMerkleLog
+from memmark.core.sampler import sample_memory_transition
+from memmark.core.types import Candidate, DecisionPoint, SessionHeader
+
+
+# --------------------------------------------------------------- #
+# AgentMark-style prompt suffix + parser
+# --------------------------------------------------------------- #
+
+
+AGENTMARK_INSTRUCTION_TMPL = """
+
+CRITICAL OVERRIDE: instead of returning a single answer in the schema
+above, return JSON in EXACTLY this multi-candidate form:
+
+{{
+  "candidates": [
+    {{"decision": <answer matching the original schema>, "weight": <float>}},
+    {{"decision": <plausible alternative>, "weight": <float>}}
+    // ... up to {target_k} entries
+  ],
+  "thought": "<brief rationale>"
+}}
+
+Requirements:
+- Provide {target_k} candidate alternatives (or as many distinct
+  plausible alternatives as you can produce).
+- Each "decision" object must independently match the original schema
+  described above (same field names, same types).
+- All "weight" values are positive floats; rank by your real
+  preference. Use small values like 1e-3 for unlikely alternatives.
+- Avoid uniform weights.
+- Sum need not be exact; will be normalized.
+- Return ONLY this JSON; no extra text or code fences.
+"""
+
+
+def _format_agentmark_instruction(target_k: int) -> str:
+    return AGENTMARK_INSTRUCTION_TMPL.format(target_k=target_k)
+
+
+def _strip_code_fence(text: str) -> str:
+    fence = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL | re.IGNORECASE)
+    if fence:
+        return fence.group(1)
+    return text
+
+
+def _extract_json_payload(raw: str) -> Any:
+    """Best-effort JSON extraction (handles code fences / loose text)."""
+
+    s = (raw or "").strip()
+    if not s:
+        return None
+    s = _strip_code_fence(s)
+    try:
+        return json.loads(s)
+    except json.JSONDecodeError:
+        pass
+    # Locate outermost braces
+    start = s.find("{")
+    end = s.rfind("}")
+    if start != -1 and end > start:
+        try:
+            return json.loads(s[start : end + 1])
+        except json.JSONDecodeError:
+            return None
+    return None
+
+
+def parse_agentmark_response(raw: str) -> Tuple[List[Any], List[float]]:
+    """Parse ``{candidates: [{decision, weight}, ...], thought}`` →
+    ``(decisions, weights)``.
+
+    Returns ``([], [])`` if the response can't be parsed as the
+    AgentMark wrapper. Each ``decision`` is whatever shape the LLM
+    emitted (typically ``dict`` for structured output, or
+    JSON-stringifiable for SDK consumption).
+    """
+
+    parsed = _extract_json_payload(raw)
+    if not isinstance(parsed, dict):
+        return [], []
+    candidates = parsed.get("candidates")
+    if not isinstance(candidates, list):
+        return [], []
+    decisions: List[Any] = []
+    weights: List[float] = []
+    for c in candidates:
+        if not isinstance(c, dict) or "decision" not in c:
+            continue
+        try:
+            w = float(c.get("weight", 0.0))
+        except (TypeError, ValueError):
+            w = 0.0
+        decisions.append(c["decision"])
+        weights.append(max(w, 1e-6))
+    return decisions, weights
+
+
+# --------------------------------------------------------------- #
+# Core: keyed sampler + audit log
+# --------------------------------------------------------------- #
+
+
+class WatermarkedSampler:
+    """Shared core for both SDK adapters.
+
+    Each LLM call routed through a wrapper does:
+
+      1. Wrapper appends AgentMark instruction to the SDK's prompt.
+      2. Wrapper makes ONE underlying LLM call; LLM returns
+         ``{candidates: [{decision, weight}, ...], thought}``.
+      3. Wrapper calls :meth:`intercept` with ``(decisions, weights,
+         ctx_text)``.
+      4. ``intercept`` builds a ``DecisionPoint`` whose probabilities
+         are the LLM-self-reported (and renormalized) weights.
+      5. Derives ``nonce_t = HMAC(K, ctx_t)`` and runs
+         :func:`sample_memory_transition` for the keyed pick.
+      6. Appends commitment to the Merkle log + AuditRecord to the
+         in-memory audit list.
+      7. Returns the chosen decision (JSON string) for the wrapper to
+         hand back to the SDK.
+
+    Single candidate (LLM didn't comply) ⇒ no watermarkable freedom;
+    pass through verbatim, no audit emitted.
+    """
+
+    def __init__(
+        self,
+        *,
+        secret_key: str,
+        payload_bits: str,
+        agent_id: str,
+        user_id: str,
+        session_id: str,
+        sampler_mode: str = "watermark",
+        watermark_version: str = "memmark-native-v0.1",
+        target_k: int = 4,
+    ) -> None:
+        self.secret_key = secret_key
+        self.payload_bits = payload_bits
+        self.agent_id = agent_id
+        self.user_id = user_id
+        self.session_id = session_id
+        self.sampler_mode = sampler_mode
+        self.watermark_version = watermark_version
+        # Number of candidates we ask the LLM to enumerate per call.
+        self.target_k = max(2, int(target_k))
+        self.bit_index = 0
+        self.round_num = 0
+        self.audit_log: List = []
+        self.merkle_log = SessionMerkleLog(
+            agent_id=agent_id,
+            user_id=user_id,
+            session_id=session_id,
+            secret_key=secret_key,
+            watermark_version=watermark_version,
+        )
+        self._event_context: Dict[str, Any] = {}
+
+    # ----- entry point ----------------------------------------------- #
+    def intercept(
+        self,
+        decisions: List[str],
+        weights: List[float],
+        ctx_text: str,
+        *,
+        prompt_name: str = "",
+    ) -> str:
+        """Keyed-pick over ``(decisions, weights)``; emit audit.
+
+        ``decisions`` are the K candidate decision strings the LLM
+        produced (each is the SDK's expected output for that call).
+        ``weights`` are the LLM-self-reported per-candidate weights
+        (will be renormalized).
+        """
+
+        if not decisions:
+            return ""
+        if len(decisions) == 1:
+            return decisions[0]
+
+        # Renormalize weights
+        total = float(sum(weights))
+        if total <= 0:
+            normalized = [1.0 / len(decisions)] * len(decisions)
+        else:
+            normalized = [w / total for w in weights]
+
+        ctx_payload = {
+            "agent_id": self.agent_id,
+            "user_id": self.user_id,
+            "session_id": self.session_id,
+            "round": self.round_num,
+            "event_context": self._event_context,
+            "prompt": ctx_text,
+            "prompt_name": prompt_name,
+        }
+        ctx_serialized = json.dumps(ctx_payload, sort_keys=True, ensure_ascii=False)
+        ctx_hash = sha256_text(ctx_serialized)
+        nonce = derive_nonce(self.secret_key, ctx_serialized)
+
+        cands_obj: List[Candidate] = []
+        probs: Dict[str, float] = {}
+        for idx, dec in enumerate(decisions, start=1):
+            cid = self._candidate_id(idx, dec)
+            cands_obj.append(
+                Candidate(
+                    candidate_id=cid,
+                    carrier_type="llm_call",
+                    payload={"text": dec, "prompt_name": prompt_name},
+                    operation={},
+                    utility_score=normalized[idx - 1],
+                )
+            )
+            probs[cid] = normalized[idx - 1]
+
+        decision = DecisionPoint(
+            decision_id=f"d{self.round_num + 1}",
+            tau="llm_call",
+            candidates=cands_obj,
+            probabilities=probs,
+            context=ctx_hash,
+            round_num=self.round_num,
+            nonce=nonce,
+            watermark_version=self.watermark_version,
+        )
+
+        sample = sample_memory_transition(
+            decision,
+            payload_bits=self.payload_bits,
+            bit_index=self.bit_index,
+            mode=self.sampler_mode,
+        )
+        self.bit_index += sample.bits_embedded
+
+        audit = make_commitment(
+            decision,
+            selected_candidate_id=sample.selected_candidate.candidate_id,
+            bits_embedded=sample.bits_embedded,
+            bit_index_after=self.bit_index,
+            keep_reveal=True,
+        )
+        self.merkle_log.append(audit.commitment)
+        self.audit_log.append(audit)
+        self.round_num += 1
+        return sample.selected_candidate.payload["text"]
+
+    # ----- per-event metadata ---------------------------------------- #
+    def set_event_context(self, **fields: Any) -> None:
+        self._event_context = dict(fields)
+
+    def clear_event_context(self) -> None:
+        self._event_context = {}
+
+    # ----- session sealing ------------------------------------------- #
+    def seal_session(self) -> SessionHeader:
+        return self.merkle_log.seal()
+
+    # ----- internals ------------------------------------------------- #
+    def _candidate_id(self, idx: int, payload_text: str) -> str:
+        digest = hashlib.sha256(
+            f"{self.round_num}|{idx}|{payload_text}".encode("utf-8")
+        ).hexdigest()[:10]
+        return f"llm_{idx}_{digest}"
+
+
+# --------------------------------------------------------------- #
+# A-MEM adapter — drop-in LLMController replacement
+# --------------------------------------------------------------- #
+
+
+class WatermarkedAMemController:
+    """Drop-in replacement for A-mem's ``LLMController``.
+
+    A-mem's ``AgenticMemorySystem`` calls
+    ``self.llm_controller.llm.get_completion(prompt, response_format,
+    temperature)`` for ``analyze_content`` / ``process_memory``. Our
+    wrapper appends an AgentMark-style instruction to the prompt,
+    relaxes ``response_format`` to permissive JSON, parses the
+    wrapped response, runs keyed pick, returns the chosen
+    ``decision`` JSON string.
+    """
+
+    def __init__(
+        self,
+        sampler: WatermarkedSampler,
+        underlying: Any,
+        *,
+        prompt_name: str = "amem",
+    ) -> None:
+        self.sampler = sampler
+        self.underlying = underlying
+        self._prompt_name = prompt_name
+        self.llm = _AMemInnerWrapper(sampler, underlying.llm, prompt_name)
+
+    def get_completion(
+        self,
+        prompt: str,
+        response_format: Any = None,
+        temperature: float = 1.0,
+    ) -> str:
+        return self.llm.get_completion(prompt, response_format, temperature)
+
+
+class _AMemInnerWrapper:
+    """Wraps the inner controller object that A-mem accesses as
+    ``llm_controller.llm`` (e.g. ``OpenAIController``).
+    """
+
+    def __init__(self, sampler: WatermarkedSampler, underlying: Any, prompt_name: str):
+        self.sampler = sampler
+        self.underlying = underlying
+        self._prompt_name = prompt_name
+
+    def get_completion(
+        self,
+        prompt: str,
+        response_format: Any = None,
+        temperature: float = 1.0,
+    ) -> str:
+        wrapped_prompt = prompt + _format_agentmark_instruction(self.sampler.target_k)
+        # Relax response_format from strict json_schema to permissive
+        # json_object — the original schema is now described in the
+        # prompt body.
+        permissive_format = {"type": "json_object"}
+        try:
+            raw = self.underlying.get_completion(
+                wrapped_prompt, permissive_format, temperature
+            )
+        except Exception:
+            return self._passthrough(prompt, response_format, temperature)
+        if not isinstance(raw, str) or not raw.strip():
+            return self._passthrough(prompt, response_format, temperature)
+
+        decisions, weights = parse_agentmark_response(raw)
+        if len(decisions) < 2:
+            # LLM didn't comply; fall back to a clean SDK call (no
+            # watermark embedded for this LLM call).
+            return self._passthrough(prompt, response_format, temperature)
+
+        # Convert each decision to a stable JSON string for the SDK.
+        decision_strs = [
+            json.dumps(d, sort_keys=True, ensure_ascii=False)
+            if not isinstance(d, str)
+            else d
+            for d in decisions
+        ]
+        return self.sampler.intercept(
+            decision_strs,
+            weights,
+            ctx_text=prompt,
+            prompt_name=self._prompt_name,
+        )
+
+    def _passthrough(self, prompt, response_format, temperature) -> str:
+        try:
+            return self.underlying.get_completion(prompt, response_format, temperature)
+        except Exception:
+            return ""
+
+    def __getattr__(self, item: str) -> Any:
+        return getattr(self.underlying, item)
+
+
+# --------------------------------------------------------------- #
+# Graphiti adapter — implements LLMClient ABC
+# --------------------------------------------------------------- #
+
+
+def make_watermarked_graphiti_client(sampler: WatermarkedSampler, underlying: Any):
+    """Build a Graphiti ``LLMClient`` subclass that intercepts each
+    ``_generate_response`` call with the AgentMark-style 1-call
+    pattern.
+
+    For each call with a Pydantic ``response_model``, we dynamically
+    create a wrapper Pydantic model
+    ``Wrapped(candidates: List[Candidate(decision: response_model,
+    weight: float)], thought: str)``, ask the underlying client to
+    fill it, parse, keyed-pick, and return the chosen ``decision``
+    as a dict.
+    """
+
+    try:
+        from graphiti_core.llm_client.client import LLMClient
+        from pydantic import BaseModel, create_model
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(
+            "graphiti_core (and pydantic) are required for the Graphiti backend. "
+            "`pip install graphiti-core` first."
+        ) from exc
+
+    class WatermarkedGraphitiClient(LLMClient):
+        """Subclass of :class:`graphiti_core.llm_client.client.LLMClient`.
+
+        AgentMark-style 1-call interception: dynamically wrap the
+        SDK's Pydantic ``response_model`` to ask for K candidates +
+        weights, then keyed-pick one.
+        """
+
+        def __init__(self, sampler_: WatermarkedSampler, underlying_: Any):
+            super().__init__(config=getattr(underlying_, "config", None))
+            self._sampler = sampler_
+            self._underlying = underlying_
+
+        async def _generate_response(  # type: ignore[override]
+            self,
+            messages,
+            response_model=None,
+            max_tokens: int = 8192,
+            model_size=None,
+        ) -> Dict[str, Any]:
+            if response_model is None:
+                # No structured output to wrap — pass through.
+                return await self._underlying._generate_response(
+                    messages, None, max_tokens, model_size
+                )
+
+            # Build wrapper Pydantic model on the fly.
+            try:
+                Candidate_M = create_model(
+                    "AGMCandidate",
+                    decision=(response_model, ...),
+                    weight=(float, 1.0),
+                )
+                Wrapped_M = create_model(
+                    "AGMWrapped",
+                    candidates=(List[Candidate_M], ...),
+                    thought=(str, ""),
+                )
+            except Exception:
+                return await self._underlying._generate_response(
+                    messages, response_model, max_tokens, model_size
+                )
+
+            # Inject AgentMark instruction onto the last message.
+            instr = _format_agentmark_instruction(self._sampler.target_k)
+            try:
+                last_msg = messages[-1]
+                cloned_last = type(last_msg)(
+                    role=last_msg.role,
+                    content=(last_msg.content or "") + instr,
+                )
+                new_messages = list(messages[:-1]) + [cloned_last]
+            except Exception:
+                new_messages = messages
+
+            try:
+                wrapped_resp = await self._underlying._generate_response(
+                    new_messages, Wrapped_M, max_tokens, model_size
+                )
+            except Exception:
+                return await self._underlying._generate_response(
+                    messages, response_model, max_tokens, model_size
+                )
+
+            candidates = (
+                wrapped_resp.get("candidates") if isinstance(wrapped_resp, dict) else None
+            )
+            if not isinstance(candidates, list) or len(candidates) < 2:
+                # LLM didn't comply or only gave one. Fall back.
+                if isinstance(candidates, list) and len(candidates) == 1:
+                    cand = candidates[0]
+                    if isinstance(cand, dict) and isinstance(cand.get("decision"), dict):
+                        return cand["decision"]
+                return await self._underlying._generate_response(
+                    messages, response_model, max_tokens, model_size
+                )
+
+            decisions: List[Dict[str, Any]] = []
+            weights: List[float] = []
+            for c in candidates:
+                if not isinstance(c, dict) or "decision" not in c:
+                    continue
+                dec = c["decision"]
+                if not isinstance(dec, dict):
+                    continue
+                try:
+                    w = float(c.get("weight", 0.0))
+                except (TypeError, ValueError):
+                    w = 0.0
+                decisions.append(dec)
+                weights.append(max(w, 1e-6))
+            if len(decisions) < 2:
+                return await self._underlying._generate_response(
+                    messages, response_model, max_tokens, model_size
+                )
+
+            decision_strs = [
+                json.dumps(d, sort_keys=True, ensure_ascii=False, default=str)
+                for d in decisions
+            ]
+            ctx_text = "\n".join(getattr(m, "content", "") for m in messages)
+
+            chosen_str = self._sampler.intercept(
+                decision_strs,
+                weights,
+                ctx_text=ctx_text,
+                prompt_name="graphiti",
+            )
+            try:
+                chosen = json.loads(chosen_str)
+                if isinstance(chosen, dict):
+                    return chosen
+            except json.JSONDecodeError:
+                pass
+            # Fall back to first decision.
+            return decisions[0]
+
+    return WatermarkedGraphitiClient(sampler, underlying)
+
+
+__all__ = [
+    "WatermarkedSampler",
+    "WatermarkedAMemController",
+    "make_watermarked_graphiti_client",
+    "parse_agentmark_response",
+]

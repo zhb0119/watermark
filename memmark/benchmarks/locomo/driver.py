@@ -6,12 +6,13 @@ its upstream LoCoMo / LongMemEval official protocol):
   - "turn"    : per-turn episode with session date_time
                 Graphiti  (graphiti/tests/evals/eval_e2e_graph_building.py)
                 JsonStore (smoke default)
-  - "session" : full session text as one document
-                Cognee    (cognee/eval_framework benchmark adapters)
   - "fact"    : LoCoMo-official `CONVERSATION2FACTS_PROMPT` per
                 session → N facts each with dia_id evidence
                 A-MEM     (Mem0-style fact extraction; agentic_memory
                           paper protocol)
+
+  ("session" mode is still implemented for completeness but no
+  current backend uses it.)
 
 The driver reads `backend.preferred_ingestion_mode` and dispatches
 automatically, so each backend gets the input format its upstream
@@ -47,7 +48,9 @@ from memmark.sdk.memory_watermarker import EvolveResult, MemoryWatermarker
 
 TurnFilter = Callable[[LoCoMoTurn, str], bool]
 QAJudge = Callable[[LoCoMoQuestion, str], bool]
-QAResponder = Callable[[LoCoMoQuestion, List[Dict[str, Any]]], str]
+# qa_responder takes the question + a pre-rendered memory context
+# string (produced by `backend.qa_context(question)`).
+QAResponder = Callable[[LoCoMoQuestion, str], str]
 
 
 @dataclass
@@ -481,7 +484,7 @@ class LoCoMoDriver:
         result: "LoCoMoDriverResult",
         recent_dialog_ids: List[str],
     ) -> None:
-        """Document-level ingestion (Cognee default).
+        """Document-level ingestion (one filtered session = one doc).
 
         The whole filtered session is concatenated and pushed as one
         document; cognify() / its native pipeline does the entity /
@@ -633,9 +636,10 @@ class LoCoMoDriver:
                     "speaker": speaker,
                     "text": event_text,
                     "applied": False,
-                    "reason": "acceptance_fail",
+                    "reason": f"apply_fail: {exc.__class__.__name__}",
                 }
             )
+            self.wm.clear_event_context()
             return
         result.decisions.append(evolve_result.decision)
         result.audits.append(evolve_result.audit)
@@ -656,9 +660,8 @@ class LoCoMoDriver:
                 "speaker": speaker,
                 "text": event_text,
                 "applied": True,
-                "selected": evolve_result.audit.selected_candidate_id,
-                "tau": evolve_result.audit.tau,
-                "bits_embedded": evolve_result.audit.bits_embedded,
+                "llm_calls": len(new_audits),
+                "bits_embedded": bits_for_event,
             }
         )
 
@@ -774,26 +777,30 @@ def _keep_all_substantive_turns(turn: LoCoMoTurn, session_summary: str) -> bool:
 
 
 def _default_qa_responder(
-    question: LoCoMoQuestion, memory_snapshot: List[Dict[str, Any]]
+    question: LoCoMoQuestion, context_text: str
 ) -> str:
     """Substring lookup; only used when LLM responder isn't wired.
     Real runs should use `make_locomo_qa_responder(llm_client)` from
     qa_eval.py.
+
+    `context_text` is whatever the backend's `qa_context` returned
+    (canonical retrieval rendering).
     """
 
     keywords = [w for w in question.question.lower().split() if len(w) > 3]
-    best = ""
-    for record in memory_snapshot:
-        text = record.get("text", "") or ""
-        if not text:
-            continue
-        score = sum(1 for kw in keywords if kw in text.lower())
-        if score and (
-            not best
-            or score > sum(1 for kw in keywords if kw in best.lower())
-        ):
-            best = text
-    return best
+    if not keywords:
+        return ""
+    # Cheap match: pick the line in the rendered context with the
+    # most keyword hits.
+    best_line = ""
+    best_score = 0
+    for line in (context_text or "").splitlines():
+        line_lower = line.lower()
+        score = sum(1 for kw in keywords if kw in line_lower)
+        if score > best_score:
+            best_score = score
+            best_line = line
+    return best_line
 
 
 def _default_qa_judge(question: LoCoMoQuestion, answer: str) -> bool:

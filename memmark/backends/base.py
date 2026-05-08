@@ -20,15 +20,16 @@ class MemoryBackendAdapter(ABC):
         Driver dispatches on this to feed the backend in the way its
         upstream paper / repo uses for LoCoMo / LongMemEval:
           - "turn":    one memory event per LoCoMo turn  (Graphiti)
-          - "session": one memory event per LoCoMo session text  (Cognee)
+          - "session": one memory event per LoCoMo session text
           - "fact":    LoCoMo-style per-session LLM fact extraction
                        with dia_id evidence   (A-MEM, Mem0)
 
-    Optional carrier-aware retrieval (planner falls back to keyword
-    overlap if these aren't implemented):
-
-      * candidate_update_targets(text, k)
-      * candidate_link_targets(text, k)
+    Optional sampler attachment:
+      * attach_sampler(sampler)  — wrap the backend's *internal* LLM
+        client with the watermark sampler. Backends that drive their
+        own evolution via LLM (A-MEM, Graphiti) override this
+        to install :class:`memmark.llm.watermarked.WatermarkedSampler`
+        at the SDK's LLM-call boundary. JsonStore is a no-op.
     """
 
     # Driver fallback when a backend doesn't override.
@@ -42,34 +43,40 @@ class MemoryBackendAdapter(ABC):
     def apply(self, operation: Dict[str, Any]) -> Dict[str, Any]:
         raise NotImplementedError
 
-    # ------------- optional carrier helpers -------------- #
-    def candidate_update_targets(
-        self, text: str, k: int = 5
-    ) -> List[Dict[str, Any]]:
-        """Existing memory ids that are *plausible update targets* for
-        this incoming text. Default: top-k by string similarity over
-        snapshot(). Real backends should override with a vector / KG
-        query that reflects the backend's actual evolve freedom.
+    # ------------- watermark sampler injection ----------- #
+    def attach_sampler(self, sampler: Any) -> None:
+        """Default: no internal LLM → nothing to wrap."""
+
+        return None
+
+    # ------------- canonical QA context ------------------ #
+    def qa_context(self, question: str, k: int = 10) -> Dict[str, Any]:
+        """Return per-question retrieval context for the QA prompt.
+
+        Returns ``{"mode": "context"|"answer", "text": str}``:
+
+          * ``"context"`` — pre-rendered memory text. The driver wraps
+            it in LoCoMo's QA_PROMPT and asks our own LLM.
+          * ``"answer"``  — the system already produced the answer
+            itself. The driver returns it
+            verbatim, skipping the QA prompt.
+
+        Default: render the entire snapshot via session-marker
+        grouping (matching LoCoMo's full-conversation Base/Observation
+        rendering). Backends with a native canonical retrieve API
+        (A-MEM ``find_related_memories``, Graphiti
+        ``search``) override this so QA sees memory in the shape the
+        upstream system intends.
         """
 
-        return _string_topk(self.snapshot(), text, k)
+        from memmark.benchmarks.locomo.qa_eval import _default_render_memory
 
-    def candidate_link_targets(
-        self, text: str, k: int = 5
-    ) -> List[Dict[str, Any]]:
-        """Existing memory ids that are *plausible link targets*.
-        Default same as update; backends with native graph / cluster
-        retrieval should override.
-        """
-
-        return _string_topk(self.snapshot(), text, k)
+        return {"mode": "context", "text": _default_render_memory(self.snapshot())}
 
 
 def _string_topk(snapshot: List[Dict[str, Any]], query: str, k: int):
-    """Cheap baseline: keyword-overlap top-k over snapshot.
-
-    Used by JsonMemoryStore + as a defensive fallback for backends
-    that didn't override the candidate_* methods.
+    """Cheap keyword-overlap top-k. Used by ``_default_render_memory``
+    helpers that need to surface a few records by query relevance.
     """
 
     qwords = {w for w in (query or "").lower().split() if len(w) > 2}

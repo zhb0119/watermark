@@ -8,7 +8,7 @@ Two LLM modes (the diff that turns this from a smoke into a paper run):
                                 这是"图里那 9 步"真实路径,跑 paper 用这个.
 
 Backends:
-  --backend json|amem|cognee|graphiti
+  --backend json|amem|graphiti
 
 Example (paper-quality 1 cell):
 
@@ -63,7 +63,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--backend",
-        choices=("json", "cognee", "amem", "graphiti"),
+        choices=("json", "amem", "graphiti"),
         default="json",
     )
     parser.add_argument(
@@ -84,18 +84,11 @@ def build_parser() -> argparse.ArgumentParser:
         choices=("stub", "real"),
         default="stub",
         help=(
-            "stub = rule-based extractor / static paraphrase carriers / "
-            "substring QA judge (zero API cost, smoke only). "
-            "real = LLM extractor + LLMCarrierPlanner + LLM QA responder. "
-            "Required for paper numbers."
-        ),
-    )
-    parser.add_argument(
-        "--async-assess",
-        action="store_true",
-        help=(
-            "(real mode) fan out the 3 carrier-feasibility prompts in parallel "
-            "via AsyncOpenAIChatClient. ~2x speedup."
+            "stub = no LLM (zero API cost; only viable with the JsonStore "
+            "backend for plumbing checks). "
+            "real = configure an OpenAI-compatible client; backends use it "
+            "for their own internal evolution and we use it for fact "
+            "extraction + QA. Required for paper numbers."
         ),
     )
     parser.add_argument("--progress", action="store_true")
@@ -113,12 +106,12 @@ def main() -> None:
         )
     conv = conversations[args.conversation]
 
-    # Build LLM client + carrier planner builder + QA responder once,
-    # share across baselines. The carrier planner is per-baseline
-    # because it needs the *backend* instance for backend-aware
-    # candidates.
-    llm_client, planner_factory, qa_responder, qa_judge = _build_llm_layer(
-        args.llm_mode, async_assess=args.async_assess
+    # Build LLM client (for QA only) + LoCoMo-official QA judge.
+    # The watermark itself is now embedded inside each backend's
+    # internal LLM calls via ``WatermarkedSampler`` — no external
+    # carrier planner / candidate synthesis here.
+    llm_client, qa_responder, qa_judge, fact_extractor = _build_qa_layer(
+        args.llm_mode
     )
 
     runs = {}
@@ -135,7 +128,6 @@ def main() -> None:
             user_id="memmark-user",
             session_id=f"locomo-{conv.sample_id}-{label}",
             secret_key=args.secret_key,
-            carrier_planner=carrier_planner,
         )
         driver = LoCoMoDriver(
             watermarker=wm,
@@ -213,49 +205,32 @@ def main() -> None:
         print(json.dumps(_to_jsonable(report), indent=2, ensure_ascii=False))
 
 
-def _build_llm_layer(mode: str, *, async_assess: bool):
-    """Return (llm_client, planner_factory, qa_responder, qa_judge).
+def _build_qa_layer(mode: str):
+    """Return (llm_client, qa_responder, qa_judge, fact_extractor).
 
-    planner_factory takes the backend so it can construct a
-    backend-aware LLMCarrierPlanner that pulls candidate update / link
-    targets from the backend's *real* retrieval (A-MEM ChromaDB,
-    Graphiti graph, etc.), not from a homemade LLM prompt.
+    The watermark no longer needs an external carrier planner — bits
+    are embedded by ``WatermarkedSampler`` intercepting each backend's
+    own internal LLM calls. We only need an LLM client for:
 
-    QA responder + judge use the LoCoMo official prompts + F1 metric
-    (memmark.benchmarks.locomo.qa_eval).
+      * QA responder    — answers LoCoMo questions from the rendered
+                          memory context (LoCoMo official prompt).
+      * fact_extractor  — runs ``CONVERSATION2FACTS_PROMPT`` for the
+                          ``fact``-mode ingestion path (A-MEM /
+                          Mem0 protocol).
+
+    QA judge is the LoCoMo official F1≥0.5 / cat-5 abstention rule;
+    not an LLM-judge.
     """
 
     if mode == "stub":
         return None, None, None, None
 
-    # mode == "real"
-    from memmark.carriers.planner import LLMCarrierPlanner
-    from memmark.carriers.semantic_realization import SemanticRealizationCarrier
     from memmark.llm import OpenAIChatClient
 
-    if async_assess:
-        from memmark.llm import AsyncOpenAIChatClient
-
-        llm_client = AsyncOpenAIChatClient()
-    else:
-        llm_client = OpenAIChatClient()
-
-    fallback = SemanticRealizationCarrier()
-
-    def planner_factory(backend):
-        return LLMCarrierPlanner(
-            llm_client=llm_client,
-            fallback_carrier=fallback,
-            merge_gen_and_score=True,
-            async_assess=async_assess,
-            backend=backend,
-        )
-
+    llm_client = OpenAIChatClient()
     qa_responder = make_locomo_qa_responder(llm_client)
-    # Use LoCoMo-official judge (F1 threshold + cat-5 abstention rule);
-    # NOT an LLM-judge. LoCoMo paper Table 4 does not use one.
     qa_judge = make_locomo_qa_judge()
-    return llm_client, planner_factory, qa_responder, qa_judge
+    return llm_client, qa_responder, qa_judge, llm_client
 
 
 def _build_backend(name: str, amem_model_name: str):

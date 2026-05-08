@@ -273,17 +273,21 @@ def make_llm_judge(llm_client):
 def make_locomo_qa_responder(
     llm_client,
     *,
-    memory_render: Optional[Any] = None,
     max_chars: int = 12000,
 ):
-    """Returns a `qa_responder(question, snapshot) -> str` closure.
+    """Returns a `qa_responder(question, context_text) -> str` closure.
 
-    The responder builds a CONV_START_PROMPT-styled context out of the
-    memory snapshot (one record per line) plus LoCoMo's QA_PROMPT or
-    QA_PROMPT_CAT_5 (for adversarial questions, category 5).
+    `context_text` is the pre-rendered memory context produced by the
+    backend's canonical retrieval API (``backend.qa_context(question)``):
+
+      * A-mem: ``find_related_memories(q, k)`` formatted string.
+      * Graphiti: ``client.search(q, group_ids).fact`` list.
+      * JsonStore / fallback: full snapshot in LoCoMo session-marker
+        format.
+
+    Backends that produce an answer themselves (mode=``answer``)
+    bypass this responder entirely.
     """
-
-    render = memory_render or _default_render_memory
 
     def responder(question, snapshot) -> str:
         trace = build_locomo_qa_trace(

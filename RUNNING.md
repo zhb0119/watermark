@@ -55,13 +55,35 @@ export MEMMARK_MODEL="deepseek/deepseek-chat"            # 或 qwen/qwen3.5-...
 # 改 MEMMARK_MODEL,watermark_version 字段会自动区分两次 trace。
 ```
 
+### 0.8 LLM mode —— stub vs real(决定能不能拿 paper 数)
+
+`run_locomo_full.py` 有 `--llm-mode {stub,real}` 决定 9 步 pipeline 里 3 个关键步骤走 LLM 还是 stub:
+
+| 步骤 | `--llm-mode stub`(默认,smoke) | `--llm-mode real`(paper) |
+|------|-----------------------------|--------------------------|
+| 1. LoCoMo 加载 | 真实数据 | 真实数据 |
+| 2. 回放 turn | 真 turn | 真 turn |
+| **3. turn → memory record** | 简单过滤(去问候语)直接喂 backend | 简单过滤(去问候语)直接喂 backend(P0 #1 后,**不再外部 LLM 抽**;backend SDK 自己抽 keywords/tags/context/entity) |
+| **4. carrier 候选生成** | 写死 3 个 paraphrase 模板 | LLM 生成 paraphrase **+ backend 真实 retrieval**(A-MEM ChromaDB / Graphiti graph)给 update/link 候选 |
+| 5. AgentMark sampler 选 1 个 | ✅ | ✅ |
+| 6. backend.apply 写入 | ✅ | ✅ |
+| 7. commitment + Merkle log | ✅ | ✅ |
+| **8. memory 答 QA** | substring lookup | LoCoMo **官方 QA prompt**(`QA_PROMPT` / `QA_PROMPT_CAT_5` 按 5 类 category 分)+ Porter-stem F1 评分 |
+| 9. R1/R2/R3 验证 | ✅ | ✅ |
+| RQ5 evidence-grounded check | dia_id 已存 record,但 default judge 不查 | 每条 QA 报 `evidence_recall = 命中 dia_id / 总 evidence dia_id` |
+
+**论文 main table 必须 `--llm-mode real`**,因为:
+1. stub 的 paraphrase 模板候选集 = 3 个固定串,**不是 backend 真实自由度**,RQ2 capacity 数失真
+2. stub 的 QA 是 substring,**不可与 LoCoMo 论文 Table 4 / 后续 replication 对位**
+3. stub 的 RQ5 evidence_recall 没意义,无法验 update_target accuracy
+
 > **注:** 仓库根目录里 `agentmark/` 是 AgentMark 的源码副本,不需要单独 pip install。`memmark/core/sampler.py` 直接 `from agentmark.core.watermark_sampler import sample_behavior_differential`。
 
 ---
 
-## 1. Smoke:JsonMemoryStore(无外部依赖,2 分钟跑通)
+## 1. Smoke:JsonMemoryStore + stub mode(无外部依赖,< 1 分钟,zero API cost)
 
-跑这一步**先确认管线本身没坏**,再去搞真实 backend。
+跑这一步**先确认管线本身没坏**,再去搞真实 backend / real mode。
 
 ```bash
 python -m memmark.examples.run_locomo_full \
@@ -70,6 +92,7 @@ python -m memmark.examples.run_locomo_full \
     --max-sessions 2 \
     --max-qa 10 \
     --backend json \
+    --llm-mode stub \
     --baselines watermark no_watermark signed_metadata_only random_replace \
     --output ./results/smoke_json.json
 ```
@@ -84,11 +107,11 @@ python -m memmark.examples.run_locomo_full \
 },
 "r3_wrong_key": {
   "anchor_signature_valid": 0.0,
-  "bit_recovery_rate": 0.61
+  "bit_recovery_rate": 0.55
 }
 ```
 
-R3 = 1.0、wrong-key < 0.7 ⇒ 管线 OK。
+R3 = 1.0、wrong-key < 0.7 ⇒ 管线 OK。**这是 stub 数,不是 paper 数;qa_accuracy 在 stub 下接近 0 是正常的(default substring judge 太弱)。**
 
 ---
 
@@ -110,7 +133,7 @@ python -c "import nltk; nltk.download('punkt'); nltk.download('punkt_tab')"
 cd -   # 回到 memmark 根
 ```
 
-### 2.2 跑 smoke + 全部 5 个 RQ
+### 2.2 跑 smoke + 全部 5 个 RQ(stub 验通)
 
 ```bash
 python -m memmark.examples.run_locomo_full \
@@ -119,9 +142,28 @@ python -m memmark.examples.run_locomo_full \
     --max-sessions 2 \
     --max-qa 20 \
     --backend amem \
+    --llm-mode stub \
     --baselines watermark signed_metadata_only \
-    --output ./results/amem_conv0.json
+    --output ./results/amem_conv0_smoke.json
 ```
+
+### 2.2.1 真实 LLM run(paper 数据)
+
+```bash
+python -m memmark.examples.run_locomo_full \
+    --locomo "$MEMMARK_LOCOMO_PATH" \
+    --conversation 0 \
+    --backend amem \
+    --llm-mode real --async-assess \
+    --baselines watermark no_watermark signed_metadata_only \
+    --output ./results/amem_conv0_real.json
+```
+
+`--llm-mode real` 自动:
+- 把 LoCoMo turn(`Speaker (D1:3): text`)直接喂 `AgenticMemorySystem.add_note()`,A-MEM 自己抽 keywords/tags/links
+- carrier 候选的 update/link 目标来自 **A-MEM 真实 ChromaDB top-k**,不是 LLM 编造的 memory_id
+- QA 用 LoCoMo 官方 prompt(category-aware)+ Porter-stem F1 评分
+- RQ5 报 `evidence_recall_mean`,看 QA 用到的 memory 是不是真有对应的 dia_id
 
 ### 2.3 跑全 10 段对话(主网格的 1/3)
 
@@ -131,13 +173,14 @@ for i in $(seq 0 9); do
     python -m memmark.examples.run_locomo_full \
         --locomo "$MEMMARK_LOCOMO_PATH" \
         --conversation $i \
-        --max-sessions 5 \
-        --max-qa 50 \
         --backend amem \
+        --llm-mode real --async-assess \
         --baselines watermark no_watermark signed_metadata_only random_replace \
         --output ./results/amem/conv${i}.json
 done
 ```
+
+(去掉 `--max-sessions / --max-qa` 即跑全量;若先要快版本,加 `--max-sessions 5 --max-qa 50`。)
 
 ### 2.4 常见报错
 
@@ -180,6 +223,7 @@ python -m memmark.examples.run_locomo_full \
     --max-sessions 1 \
     --max-qa 5 \
     --backend cognee \
+    --llm-mode real --async-assess \
     --baselines watermark \
     --output ./results/cognee_smoke.json
 ```
@@ -214,9 +258,8 @@ for i in $(seq 0 9); do
     python -m memmark.examples.run_locomo_full \
         --locomo "$MEMMARK_LOCOMO_PATH" \
         --conversation $i \
-        --max-sessions 3 \
-        --max-qa 30 \
         --backend cognee \
+        --llm-mode real --async-assess \
         --baselines watermark no_watermark signed_metadata_only \
         --output ./results/cognee/conv${i}.json
 done
@@ -283,6 +326,7 @@ python -m memmark.examples.run_locomo_full \
     --max-sessions 1 \
     --max-qa 5 \
     --backend graphiti \
+    --llm-mode real --async-assess \
     --baselines watermark \
     --output ./results/graphiti_smoke.json
 ```
@@ -296,9 +340,8 @@ for i in $(seq 0 9); do
     python -m memmark.examples.run_locomo_full \
         --locomo "$MEMMARK_LOCOMO_PATH" \
         --conversation $i \
-        --max-sessions 3 \
-        --max-qa 30 \
         --backend graphiti \
+        --llm-mode real --async-assess \
         --baselines watermark no_watermark signed_metadata_only \
         --output ./results/graphiti/conv${i}.json
 done
@@ -327,9 +370,9 @@ docker exec memmark-neo4j cypher-shell -u neo4j -p memmark-neo4j-pass \
 > **LoCoMo 实际数据量:10 段对话 / 272 sessions / 5,882 turns / 1,986 QA / 134k 词。**
 > 下面两档分别截不同比例,看你想要的是 *一晚验通* 还是 *paper 用 final number*。
 
-### 5.1 Fast grid(一晚跑完;前 5 conv × `3 session / 30 QA`)
+### 5.1 Fast grid(stub mode,一晚跑完;前 5 conv × `3 session / 30 QA`)
 
-适用:第一次跑通整个 backend 网格、调 prompt、找 acceptance bug。**不能上 paper main table**(只覆盖 ~7% 的 LoCoMo)。
+适用:第一次跑通整个 backend 网格、找 acceptance bug、验工程链路。**不能上 paper main table**(stub mode + 只覆盖 ~7% 的 LoCoMo)。
 
 ```bash
 mkdir -p ./results/grid_fast
@@ -344,6 +387,7 @@ for backend in json amem cognee graphiti; do
             --max-sessions 3 \
             --max-qa 30 \
             --backend $backend \
+            --llm-mode stub \
             --baselines watermark no_watermark signed_metadata_only random_replace \
             --output $out 2>&1 | tee ./results/grid_fast/${backend}_conv${i}.log
     done
@@ -358,9 +402,9 @@ Fast 预算(单 cell ~ 30 QA × 3 sessions ≈ ~110 LLM 调用):
 
 5 conv × 4 backend = 20 cell;一晚跑完,**API 成本 ≈ $5–8**(DeepSeek)。
 
-### 5.2 Full LoCoMo grid(paper main table;10 conv × 全 sessions × 全 QA)
+### 5.2 Full LoCoMo grid(paper main table;10 conv × 全 sessions × 全 QA + real mode)
 
-适用:跑出能放进论文 §10 主表的数字。**关键:不传 `--max-sessions` / `--max-qa`**,driver 默认用全部。
+适用:跑出能放进论文 §10 主表的数字。**两个关键:`--llm-mode real --async-assess`** 与 **不传 `--max-sessions` / `--max-qa`**(driver 默认走全 LoCoMo)。
 
 ```bash
 mkdir -p ./results/grid_full
@@ -373,6 +417,7 @@ for backend in json amem cognee graphiti; do
             --locomo "$MEMMARK_LOCOMO_PATH" \
             --conversation $i \
             --backend $backend \
+            --llm-mode real --async-assess \
             --baselines watermark no_watermark signed_metadata_only random_replace \
             --output $out 2>&1 | tee ./results/grid_full/${backend}_conv${i}.log
     done
@@ -406,6 +451,7 @@ parallel -j 4 \
     "python -m memmark.examples.run_locomo_full \
         --locomo $MEMMARK_LOCOMO_PATH \
         --conversation {1} --backend {2} \
+        --llm-mode real --async-assess \
         --baselines watermark no_watermark signed_metadata_only random_replace \
         --output ./results/grid_full/{2}_conv{1}.json \
         > ./results/grid_full/{2}_conv{1}.log 2>&1" \
@@ -424,6 +470,7 @@ for i in $(seq 0 4); do
         --locomo "$MEMMARK_LOCOMO_PATH" \
         --conversation $i \
         --backend amem \
+        --llm-mode real --async-assess \
         --baselines watermark signed_metadata_only \
         --output ./results/mid_amem_conv${i}.json
 done
@@ -435,25 +482,55 @@ done
 
 ## 6. 读取结果
 
-每个 `*.json` 都是单一文件,用任意工具读:
+每个 `*.json` 文件包含 5 个 RQ 的全量指标。**real mode 才有 paper 可用的 F1 / evidence_recall**;stub mode 只能看 R1/R2/R3 通不通。
 
 ```bash
-# headline:R3 in-record bit recovery
+# headline:R3 in-record bit recovery + wrong-key gap
 python -c "
 import json, glob
-for f in sorted(glob.glob('./results/grid/*.json')):
+for f in sorted(glob.glob('./results/grid_full/*.json')):
     r = json.load(open(f))
     wm = r['rq3_in_record'].get('watermark', {})
-    print(f, 'R3=', wm.get('r3', {}).get('bit_recovery_rate'),
-              'wrong-key=', wm.get('r3_wrong_key', {}).get('bit_recovery_rate'))
+    print(f.split('/')[-1],
+          'R3=', round(wm.get('r3', {}).get('bit_recovery_rate', 0), 3),
+          'wrong-key=', round(wm.get('r3_wrong_key', {}).get('bit_recovery_rate', 0), 3))
 "
 
-# 全 RQ 汇总(per-baseline)
+# RQ1 + RQ2 汇总:LoCoMo F1 / capacity per baseline
 python -c "
 import json
-r = json.load(open('./results/grid/amem_conv0.json'))
-for k in ('rq1_utility','rq2_capacity','rq3_in_record','rq4_robustness','rq5_integrity'):
-    print('===', k); print(json.dumps(r[k], indent=2)[:800])
+r = json.load(open('./results/grid_full/amem_conv0.json'))
+print('=== RQ1 utility (rows) ===')
+for row in r['rq1_utility']['rows']:
+    print(f\"  {row['label']:24s} qa_f1={row.get('qa_accuracy', 0):.3f} \"
+          f\"bits/dec={row['capacity_bits_per_decision']:.2f} \"
+          f\"mem_count={row['memory_count']}\")
+
+print('=== RQ2 per-carrier capacity (watermark only) ===')
+for tau, info in r['rq2_capacity']['watermark']['by_carrier'].items():
+    print(f\"  {tau:24s} bits/dec={info['bits_per_decision']:.2f} \"
+          f\"H(p_t)={info['avg_entropy']:.2f} \"
+          f\"acceptance={info['acceptance_rate']:.2f}\")
+"
+
+# RQ5 evidence-grounded integrity(只在 real mode 有用)
+python -c "
+import json
+r = json.load(open('./results/grid_full/amem_conv0.json'))
+for label, rep in r['rq5_integrity'].items():
+    print(f\"{label:24s} evidence_recall={rep.get('evidence_recall_mean', 0):.3f} \"
+          f\"({rep.get('qa_with_full_evidence', 0)}/{rep.get('evidence_required_qas', 0)} full)\")
+"
+
+# QA 分类后的 F1(category-aware,论文 Table 4 同口径)
+python -c "
+import json, collections
+r = json.load(open('./results/grid_full/amem_conv0.json'))
+# qa_predictions 在 driver_result 里;需要用单 RQ runner 才能拿到
+# 这里只展示 rq1_utility 的合计
+print('Per-baseline qa F1 mean:')
+for row in r['rq1_utility']['rows']:
+    print(f\"  {row['label']:24s} f1≈{row.get('qa_accuracy', 0):.3f}\")
 "
 ```
 
@@ -487,28 +564,31 @@ print(run_rq3_in_record(driver_result=result, secret_key="my-key"))
 
 | 你想做的事 | 命令 |
 |----------|------|
-| 跑 smoke,只看 R3 通不通 | `--backend json --max-sessions 1 --max-qa 0` |
+| 跑 stub smoke,只看 R3 通不通 | `--backend json --llm-mode stub --max-sessions 1 --max-qa 0` |
+| 跑 paper-quality real smoke | `--backend amem --llm-mode real --async-assess --max-sessions 2 --max-qa 20` |
 | 跑 R1/R2/R3 完整对比 | `--backend json --baselines watermark` |
 | 跑 watermark vs metadata-only(headline ablation) | `--baselines watermark signed_metadata_only` |
 | 跑攻击鲁棒性 | 默认就跑了 RQ4(9 attack × 3 strength),看 `rq4_robustness` |
-| 跑 utility delta(论文 Table 1) | `--baselines watermark no_watermark` |
+| 跑 utility delta + LoCoMo F1(Table 1) | `--llm-mode real --baselines watermark no_watermark` |
 | 用真实 backend 替代 json | `--backend amem` / `--backend cognee` / `--backend graphiti` |
 | 跨 LLM ablation | 改 `MEMMARK_MODEL`,重跑同一段 conv;`watermark_version` 字段会自动区分 |
 | 换 secret key 测 wrong-key 攻击 | 在 `experiments/rq3_in_record.py` 里改 `wrong_key=` |
 | 看 Merkle anchor 是否签得对 | 结果里 `r3.anchor_signature_valid == 1.0` |
+| 看 evidence-grounded RQ5 | real mode + 看结果里 `rq5_integrity[label].evidence_recall_mean` |
+| 调候选枚举温度 | 用 Python 入口,改 `LLMCarrierPlanner` 内部 prompt 的 temperature(默认 0.7 enum / 0.0 score) |
 
 ---
 
 ## 9. 一行命令验所有 backend
 
 ```bash
-# 仅作 sanity:每个 backend 跑 1 conv × 1 session × 5 QA × watermark only
+# 仅作 sanity:每个 backend 跑 1 conv × 1 session × 5 QA × watermark only(stub)
 for b in json amem cognee graphiti; do
     echo "=== $b ==="
     python -m memmark.examples.run_locomo_full \
         --locomo "$MEMMARK_LOCOMO_PATH" \
         --conversation 0 --max-sessions 1 --max-qa 5 \
-        --backend $b --baselines watermark \
+        --backend $b --llm-mode stub --baselines watermark \
         --output ./results/sanity_${b}.json 2>&1 | tail -10
 done
 ```
@@ -524,8 +604,12 @@ done
 | `KeyError: 'memmark-default-dev-key'` | 没设 `MEMMARK_KEY` | `export MEMMARK_KEY=...` |
 | `ModuleNotFoundError: torch` | AgentMark sampler 走真实路径需要 torch | `pip install torch` |
 | `r3.bit_recovery_rate < 1.0` 在 json backend | 不可能;先看 `r1.commitment_pass_rate`,如果 < 1.0 说明 audit 落盘有 bug | 看 `r3.leaf_results` 里哪条失败 |
-| `acceptance_rate < 0.5` | 候选枚举太窄;调高 `T_enum` 或换更强 LLM | 改 `planner.py` 的 generate_candidates 温度,或 `MEMMARK_MODEL` 换成 deepseek-chat |
+| `acceptance_rate < 0.5`(real mode) | 候选枚举太窄;调高 `T_enum` 或换更强 LLM | 改 `planner.py` 的 generate_candidates 温度,或 `MEMMARK_MODEL` 换成 deepseek-chat |
 | RQ4 全部 attack 都 0% recovery | 攻击实现可能改动太狠;先单独跑 `_attack_compaction(strength=0.1)` debug | 看 `rq4_robustness.py` 的 `_attack_*` 函数 |
+| `qa_accuracy = 0` 一直 | stub mode default substring judge 太弱;真测时改 `--llm-mode real` 用 LoCoMo 官方 F1 | 切 real mode 才有意义 |
+| `evidence_recall_mean = 0` | dia_id 没串到 record。检查 backend.apply 的 record 里有没有 `dia_ids` 字段 | 4 个 backend 在 P2 #4 后都已支持;若仍为 0,看是不是用了旧版本 |
+| real mode `RuntimeError: Set MEMMARK_API_KEY...` | 没设 LLM 凭据 | 见 §0.7,设 3 个 env(`MEMMARK_API_KEY` / `MEMMARK_BASE_URL` / `MEMMARK_MODEL`) |
+| real mode 跑得很慢 | 串行 LLM 调用;开 `--async-assess` + 见 §11 加速 | `--async-assess` 立刻 ~2x;再叠 §11.3 multi-provider 再 2x |
 
 ---
 

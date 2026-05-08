@@ -303,14 +303,21 @@ docker exec memmark-neo4j cypher-shell -u neo4j -p memmark-neo4j-pass \
 
 ---
 
-## 5. 4 个 backend 同时跑(完整 backend × benchmark 主网格)
+## 5. Grid 主网格(两档:fast / full)
+
+> **LoCoMo 实际数据量:10 段对话 / 272 sessions / 5,882 turns / 1,986 QA / 134k 词。**
+> 下面两档分别截不同比例,看你想要的是 *一晚验通* 还是 *paper 用 final number*。
+
+### 5.1 Fast grid(一晚跑完;前 5 conv × `3 session / 30 QA`)
+
+适用:第一次跑通整个 backend 网格、调 prompt、找 acceptance bug。**不能上 paper main table**(只覆盖 ~7% 的 LoCoMo)。
 
 ```bash
-mkdir -p ./results/grid
+mkdir -p ./results/grid_fast
 
 for backend in json amem cognee graphiti; do
-    for i in $(seq 0 4); do                # 先跑前 5 段对话(seed=1)
-        out=./results/grid/${backend}_conv${i}.json
+    for i in $(seq 0 4); do                # 前 5 段
+        out=./results/grid_fast/${backend}_conv${i}.json
         [ -f $out ] && { echo "skip $out"; continue; }
         python -m memmark.examples.run_locomo_full \
             --locomo "$MEMMARK_LOCOMO_PATH" \
@@ -319,16 +326,91 @@ for backend in json amem cognee graphiti; do
             --max-qa 30 \
             --backend $backend \
             --baselines watermark no_watermark signed_metadata_only random_replace \
-            --output $out 2>&1 | tee ./results/grid/${backend}_conv${i}.log
+            --output $out 2>&1 | tee ./results/grid_fast/${backend}_conv${i}.log
     done
 done
 ```
 
-预算估计(LoCoMo 5 段 × 4 backend × 4 baseline,每段 30 QA,3 sessions):
-- json:< 5 min
-- A-MEM:~10 min(本地 embedding)
-- Cognee:~30–60 min(LLM 抽 KG)
-- Graphiti:~20–40 min(LLM 抽 entity)
+Fast 预算(单 cell ~ 30 QA × 3 sessions ≈ ~110 LLM 调用):
+- json:< 5 min(无外部 LLM,候选枚举走 fallback)
+- A-MEM:~10 min(本地 embedding + LLM 评估)
+- Cognee:~30–60 min(`cognify()` 跑 KG 抽取)
+- Graphiti:~20–40 min(LLM 抽 entity / edge)
+
+5 conv × 4 backend = 20 cell;一晚跑完,**API 成本 ≈ $5–8**(DeepSeek)。
+
+### 5.2 Full LoCoMo grid(paper main table;10 conv × 全 sessions × 全 QA)
+
+适用:跑出能放进论文 §10 主表的数字。**关键:不传 `--max-sessions` / `--max-qa`**,driver 默认用全部。
+
+```bash
+mkdir -p ./results/grid_full
+
+for backend in json amem cognee graphiti; do
+    for i in $(seq 0 9); do                # 全 10 段
+        out=./results/grid_full/${backend}_conv${i}.json
+        [ -f $out ] && { echo "skip $out"; continue; }
+        python -m memmark.examples.run_locomo_full \
+            --locomo "$MEMMARK_LOCOMO_PATH" \
+            --conversation $i \
+            --backend $backend \
+            --baselines watermark no_watermark signed_metadata_only random_replace \
+            --output $out 2>&1 | tee ./results/grid_full/${backend}_conv${i}.log
+    done
+done
+```
+
+Full 预算(单 cell 全量 ≈ 199 QA × ~27 sessions ≈ ~680 LLM 调用):
+
+| Backend | 单 cell wall time | 10 cell × 4 baseline 总时长 |
+|---------|------------------|-------------------------|
+| json | ~10 min | ~7 hr 串行 / ~1–2 hr 并发 |
+| A-MEM | ~30 min | ~20 hr 串行 / ~4 hr 并发 |
+| Cognee | ~1–4 hr | ~40–160 hr 串行 / **多日** |
+| Graphiti | ~1–3 hr | ~40–120 hr 串行 / **多日** |
+
+总成本(40 cell × ~680 LLM 调用 ≈ 27k 调用 × DeepSeek $0.0002/call ≈ **$5/backend**):
+
+| LLM | 全 grid API 成本 |
+|-----|---------------|
+| DeepSeek-Chat | ~$25 |
+| GPT-4o-mini | ~$16 |
+| GPT-4o | ~$270 |
+| 自部署 Qwen3.5-397B | GPU-hr 替代 API,~3000 GPU-hr |
+
+并发跑法(每段 conv 一进程):
+
+```bash
+# GNU parallel,每个 backend 4 路并发(适合 json + amem)
+mkdir -p ./results/grid_full
+parallel -j 4 \
+    "python -m memmark.examples.run_locomo_full \
+        --locomo $MEMMARK_LOCOMO_PATH \
+        --conversation {1} --backend {2} \
+        --baselines watermark no_watermark signed_metadata_only random_replace \
+        --output ./results/grid_full/{2}_conv{1}.json \
+        > ./results/grid_full/{2}_conv{1}.log 2>&1" \
+    ::: $(seq 0 9) ::: json amem
+```
+
+> Cognee / Graphiti **不要并发**(共享 SQLite / Neo4j 实例会锁死),按 backend 串行跑。
+
+### 5.3 子集策略(中间档)
+
+如果 full grid 太重,fast grid 又太薄,可以折中跑 5 conv × full sessions,只保 watermark + signed_metadata_only 两个 baseline:
+
+```bash
+for i in $(seq 0 4); do
+    python -m memmark.examples.run_locomo_full \
+        --locomo "$MEMMARK_LOCOMO_PATH" \
+        --conversation $i \
+        --backend amem \
+        --baselines watermark signed_metadata_only \
+        --output ./results/mid_amem_conv${i}.json
+done
+```
+
+5 cell × 2 baseline ≈ 1.5 hr,API ~$2,够拿 §10.5 RQ3 R3 + signed-metadata-only 边际收益的 headline 数字。
 
 ---
 

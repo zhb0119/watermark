@@ -1,14 +1,26 @@
-"""LoCoMo-official QA prompt + F1 metric.
+"""LoCoMo-official QA prompt + Table 4 metric suite.
 
 Mirrors `locomo/task_eval/{evaluation.py, gpt_utils.py}`:
 
-  * QA_PROMPT  / QA_PROMPT_CAT_5  — original templates
-  * f1_score, f1, normalize_answer — original metric (Porter-stemmed
-    token-level F1 with category 1 multi-answer split, category 5
-    "no information available" check, exact match for category 2/3/4).
+  * QA_PROMPT  / QA_PROMPT_CAT_5  — original prompt templates
+  * f1_score / f1_multi / score_one — Porter-stemmed token F1
+    (verbatim from `evaluation.py.eval_question_answering`)
+  * bleu1 — clipped unigram BLEU
+  * rouge_l — longest-common-subsequence F1 (Table 4 reports
+    `rouge-1.f` from rouge package; LCS-based F1 is the same metric
+    family and avoids an extra dep)
+  * make_locomo_qa_judge — binary CORRECT/INCORRECT via the
+    category-aware LoCoMo rule (F1 threshold or abstention check),
+    matching `eval_question_answering`'s `all_ems` semantics. **Not
+    LLM-as-judge** — LoCoMo paper does not use one.
 
-Using these for paper main-table numbers makes our results directly
-comparable to the LoCoMo paper Table 4 + downstream replications.
+`make_llm_judge` is also exposed for callers who want an LLM-judge
+ablation, but it is *not* used by the default real-mode pipeline.
+
+Memory snapshots are rendered with LoCoMo's `=== Session N
+(timestamp) ===` block format (matching `task_eval/get_facts.py`),
+so the QA prompt sees memory in the same shape as LoCoMo paper's
+Base / +Observation baselines.
 """
 
 from __future__ import annotations
@@ -121,6 +133,140 @@ def score_one(prediction: str, gold: str, category: int) -> float:
     return f1_score(prediction, gold)
 
 
+# ----- BLEU-1 + ROUGE-L (no extra deps) ---------------------------- #
+
+
+def bleu1(prediction: str, gold: str) -> float:
+    """Clipped unigram BLEU (no brevity penalty), LoCoMo Table 4 same."""
+
+    pred_tokens = normalize_answer(prediction).split()
+    gold_tokens = normalize_answer(gold).split()
+    if not pred_tokens or not gold_tokens:
+        return 0.0
+    gold_counts = Counter(gold_tokens)
+    clipped = 0
+    for tok in pred_tokens:
+        if gold_counts[tok] > 0:
+            clipped += 1
+            gold_counts[tok] -= 1
+    return clipped / len(pred_tokens)
+
+
+def rouge_l(prediction: str, gold: str) -> float:
+    """ROUGE-L F1 via LCS over normalized tokens."""
+
+    pred_tokens = normalize_answer(prediction).split()
+    gold_tokens = normalize_answer(gold).split()
+    if not pred_tokens or not gold_tokens:
+        return 0.0
+    lcs = _lcs_length(pred_tokens, gold_tokens)
+    if lcs == 0:
+        return 0.0
+    precision = lcs / len(pred_tokens)
+    recall = lcs / len(gold_tokens)
+    return (2 * precision * recall) / (precision + recall)
+
+
+def _lcs_length(a, b) -> int:
+    if not a or not b:
+        return 0
+    n, m = len(a), len(b)
+    # Use 2-row DP to keep memory bounded
+    prev = [0] * (m + 1)
+    cur = [0] * (m + 1)
+    for i in range(1, n + 1):
+        ai = a[i - 1]
+        for j in range(1, m + 1):
+            if ai == b[j - 1]:
+                cur[j] = prev[j - 1] + 1
+            else:
+                cur[j] = max(prev[j], cur[j - 1])
+        prev, cur = cur, [0] * (m + 1)
+    return prev[m]
+
+
+def metric_suite(prediction: str, gold: str, category: int) -> dict:
+    """Returns the LoCoMo Table 4 numbers per QA leaf."""
+
+    return {
+        "f1": score_one(prediction, gold, category),  # category-aware F1
+        "bleu1": bleu1(prediction, gold),
+        "rougeL": rouge_l(prediction, gold),
+    }
+
+
+def aggregate_locomo_metrics(qa_predictions: List[dict]) -> dict:
+    """Mirror of `task_eval/evaluation.eval_question_answering` output.
+
+    Returns per-category F1 / BLEU-1 / ROUGE-L means + overall, with
+    the same category bucketing the LoCoMo paper Table 4 uses
+    (cat 1 = single-hop, cat 2 = temporal, cat 3 = multi-hop,
+    cat 4 = open-ended, cat 5 = adversarial / abstention).
+    """
+
+    overall = {"n": 0, "f1": 0.0, "bleu1": 0.0, "rougeL": 0.0}
+    by_cat: dict = {}
+    for q in qa_predictions:
+        cat = int(q.get("category", 0))
+        bucket = by_cat.setdefault(
+            cat, {"n": 0, "f1": 0.0, "bleu1": 0.0, "rougeL": 0.0}
+        )
+        bucket["n"] += 1
+        overall["n"] += 1
+        for k in ("f1", "bleu1", "rougeL"):
+            bucket[k] += float(q.get(k, 0.0))
+            overall[k] += float(q.get(k, 0.0))
+    for bucket in (overall, *by_cat.values()):
+        n = bucket["n"]
+        if n:
+            for k in ("f1", "bleu1", "rougeL"):
+                bucket[k] /= n
+    return {"overall": overall, "by_category": by_cat}
+
+
+# ----- LLM-as-judge (semantic CORRECT / INCORRECT) ----------------- #
+
+
+def make_llm_judge(llm_client):
+    """Returns `(question, predicted) -> bool` using LLM semantic judgment.
+
+    Prompt mirrors NirDiamant's notebook (which itself mirrors LoCoMo
+    paper's GPT-4 judge): a CORRECT / INCORRECT verdict on whether
+    the predicted answer carries the same factual information as
+    gold. Falls back to substring + F1>0.5 if the LLM call fails.
+    """
+
+    def judge(question, predicted) -> bool:
+        gold = (question.answer or "").strip()
+        if not predicted or not gold:
+            return False
+        prompt = (
+            "You are evaluating an answer to a question about a long "
+            "multi-session conversation.\n\n"
+            f"Question: {question.question}\n"
+            f"Reference answer: {gold}\n"
+            f"Predicted answer: {predicted}\n\n"
+            "Is the predicted answer correct? It does NOT need to "
+            "match word-for-word, but it MUST convey the same factual "
+            "information as the reference. For category-5 (adversarial) "
+            "questions, 'No information available' / 'I don't know' "
+            "type answers should be judged correct when the reference "
+            "indicates abstention.\n"
+            "Reply with exactly 'CORRECT' or 'INCORRECT'."
+        )
+        try:
+            raw = llm_client.complete(
+                [{"role": "user", "content": prompt}],
+                temperature=0.0,
+            )
+        except Exception:
+            # Fallback: F1 ≥ 0.5 means "good enough"
+            return score_one(predicted, gold, question.category) >= 0.5
+        return "CORRECT" in (raw or "").strip().upper()[:32]
+
+    return judge
+
+
 # ----- responder + judge wired to MemoryWatermarker driver ----------- #
 
 
@@ -182,23 +328,61 @@ def make_locomo_qa_judge():
 
 
 def _default_render_memory(snapshot: List[dict]) -> str:
-    """Render memory snapshot into LoCoMo-style natural-language context."""
+    """Render memory snapshot in LoCoMo official `=== Session N (timestamp) ===`
+    block format (matching `task_eval/get_facts.py` `conversation`
+    string and NirDiamant's notebook).
 
-    lines: List[str] = []
+    This puts memory in front of the LLM in the same shape the
+    LoCoMo paper Base / +Observation prompts see, so QA F1 is
+    directly comparable to Table 4.
+    """
+
+    if not snapshot:
+        return "(no long-term memory available)"
+
+    # Group records by session_index so we can lay them out in
+    # session-major order (matches LoCoMo's full conversation render).
+    by_session: dict[int, List[dict]] = {}
+    no_session: List[dict] = []
     for rec in snapshot:
-        text = rec.get("text") or rec.get("content") or ""
+        text = (rec.get("text") or rec.get("content") or "").strip()
         if not text:
             continue
-        meta = []
-        if rec.get("dia_ids"):
-            meta.append(f"evidence={rec['dia_ids']}")
-        if rec.get("session_index") is not None:
-            meta.append(f"session={rec['session_index']}")
-        if meta:
-            lines.append(f"- {text}  ({'; '.join(meta)})")
+        sid = rec.get("session_index")
+        if sid is None:
+            no_session.append(rec)
         else:
-            lines.append(f"- {text}")
-    return (
-        "Below are durable long-term memory entries extracted from a "
-        "multi-session conversation:\n\n" + "\n".join(lines)
-    )
+            by_session.setdefault(int(sid), []).append(rec)
+
+    lines: List[str] = []
+    for sid in sorted(by_session):
+        records = by_session[sid]
+        # Take session date_time from any record that has it.
+        ts = ""
+        for r in records:
+            ts = r.get("session_date_time") or ""
+            if ts:
+                break
+        header = f"\n=== Session {sid} ({ts}) ===" if ts else f"\n=== Session {sid} ==="
+        lines.append(header)
+        for rec in records:
+            speaker = (rec.get("speaker") or "").strip()
+            text = (rec.get("text") or "").strip()
+            evidence = rec.get("dia_ids") or []
+            evidence_tag = ""
+            if evidence:
+                evidence_tag = f" [{','.join(evidence)}]"
+            if speaker:
+                lines.append(f"{speaker}: {text}{evidence_tag}")
+            else:
+                lines.append(f"- {text}{evidence_tag}")
+
+    if no_session:
+        lines.append("\n=== Unattributed memories ===")
+        for rec in no_session:
+            text = (rec.get("text") or "").strip()
+            evidence = rec.get("dia_ids") or []
+            evidence_tag = f" [{','.join(evidence)}]" if evidence else ""
+            lines.append(f"- {text}{evidence_tag}")
+
+    return "\n".join(lines).lstrip()

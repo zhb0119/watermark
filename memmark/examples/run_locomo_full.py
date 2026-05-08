@@ -148,7 +148,9 @@ def main() -> None:
             f"[{label}] decisions={len(result.audits)} "
             f"bits_embedded={result.bits_embedded_total} "
             f"qa={len(result.qa_predictions)} "
-            f"acc={result.qa_accuracy:.3f} f1={result.qa_f1_mean:.3f}"
+            f"f1={result.qa_f1_mean:.3f} "
+            f"bleu1={result.qa_bleu1_mean:.3f} "
+            f"rougeL={result.qa_rougeL_mean:.3f}"
         )
 
     # Lazy-import RQ runners (they pull torch via decoder→AgentMark)
@@ -243,6 +245,8 @@ def _build_llm_layer(mode: str, *, async_assess: bool):
         )
 
     qa_responder = make_locomo_qa_responder(llm_client)
+    # Use LoCoMo-official judge (F1 threshold + cat-5 abstention rule);
+    # NOT an LLM-judge. LoCoMo paper Table 4 does not use one.
     qa_judge = make_locomo_qa_judge()
     return llm_client, planner_factory, qa_responder, qa_judge
 

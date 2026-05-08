@@ -118,24 +118,18 @@ class CogneeBackend(MemoryBackendAdapter):
             return {"id": target_id, "deleted": True}
         raise ValueError(f"Unsupported operation: {op}")
 
-    # ----- backend-aware carrier candidates ----- #
-    def candidate_update_targets(self, text: str, k: int = 5):
-        """For Cognee, the natural update target is whichever existing
-        node / triplet the new text would most plausibly *replace*.
-        We surface the top-k by string overlap from the in-memory
-        bookkeeping list (Cognee's KG search is async + heavy; for
-        the scoped MemMark protocol we don't need the full KG hit
-        list, just plausible ids the planner can rank).
+    # ----- watermark sampler injection ----- #
+    def attach_sampler(self, sampler: Any) -> None:
+        """Monkey-patch ``LLMGateway.acreate_structured_output`` so
+        every internal Cognee LLM call (entity extraction, relation
+        extraction, summarization, ...) goes through keyed n-best
+        sampling.
         """
 
-        from memmark.backends.base import _string_topk
+        from memmark.llm.watermarked import install_cognee_watermark
 
-        return _string_topk(self._memories, text, k)
-
-    def candidate_link_targets(self, text: str, k: int = 5):
-        from memmark.backends.base import _string_topk
-
-        return _string_topk(self._memories, text, k)
+        install_cognee_watermark(sampler)
+        self._sampler = sampler
 
     async def search_async(self, query: str, top_k: int = 5) -> List[Any]:
         return await cognee.search(

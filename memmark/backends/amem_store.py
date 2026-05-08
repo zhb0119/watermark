@@ -137,6 +137,22 @@ class AMemBackend(MemoryBackendAdapter):
     def search(self, query: str, k: int = 5) -> List[Dict[str, Any]]:
         return list(self.system.search(query, k=k))
 
+    # ----- watermark sampler injection ----- #
+    def attach_sampler(self, sampler: Any) -> None:
+        """Wrap A-mem's internal ``LLMController`` with the
+        watermark sampler. Every internal LLM call A-mem makes
+        (``analyze_content`` for keywords/context/tags +
+        ``process_memory`` for evolution decisions) now goes through
+        keyed n-best sampling.
+        """
+
+        from memmark.llm.watermarked import WatermarkedAMemController
+
+        if hasattr(self.system, "llm_controller"):
+            self.system.llm_controller = WatermarkedAMemController(
+                sampler, self.system.llm_controller, prompt_name="amem"
+            )
+
     # ----- canonical QA context ----- #
     def qa_context(self, question: str, k: int = 10) -> Dict[str, Any]:
         """A-mem's canonical QA path: feed the formatted string from
@@ -155,39 +171,6 @@ class AMemBackend(MemoryBackendAdapter):
             return {"mode": "context", "text": "(retrieval error)"}
         text = related_str or "(no related memories found)"
         return {"mode": "context", "text": text}
-
-    # ----- backend-aware carrier candidates ----- #
-    def candidate_update_targets(self, text: str, k: int = 5):
-        """Use A-MEM's ChromaDB retrieval to surface plausible update
-        targets — those are the memories whose existing content is
-        closest to the incoming event in embedding space."""
-
-        try:
-            hits = list(self.system.search(text, k=k))
-        except Exception:
-            return []
-        out = []
-        for h in hits:
-            note_id = h.get("id") or h.get("memory_id")
-            if note_id is None:
-                continue
-            out.append(self._fetch_record(str(note_id)))
-        return out
-
-    def candidate_link_targets(self, text: str, k: int = 5):
-        """A-MEM's `find_related_memories` returns top-k semantically
-        related notes — exactly the candidate links."""
-
-        try:
-            related_str, indices = self.system.find_related_memories(text, k=k)
-        except Exception:
-            return self.candidate_update_targets(text, k=k)
-        out: List[Dict[str, Any]] = []
-        for note_id in self.system.memories.keys():
-            if len(out) >= k:
-                break
-            out.append(self._fetch_record(note_id))
-        return out
 
     # -- internals ------------------------------------------------- #
     def _fetch_record(self, note_id: str) -> Dict[str, Any]:

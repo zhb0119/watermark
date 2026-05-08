@@ -156,21 +156,22 @@ class GraphitiBackend(MemoryBackendAdapter):
             return {"id": target_id, "deleted": True}
         raise ValueError(f"Unsupported operation: {op}")
 
-    # ----- backend-aware carrier candidates ----- #
-    def candidate_update_targets(self, text: str, k: int = 5):
-        """Graphiti's natural update targets are facts that the new
-        episode could *supersede*. We surface them via Graphiti's
-        own search (top-k semantically related facts).
+    # ----- watermark sampler injection ----- #
+    def attach_sampler(self, sampler: Any) -> None:
+        """Hot-swap Graphiti's ``llm_client`` with the watermark
+        wrapper. Graphiti exposes ``self.graphiti.llm_client`` as a
+        public attribute, so we replace the entire client instance.
+        Every internal Graphiti LLM call (entity extraction,
+        contradiction detection, edge labelling, summarization) now
+        goes through keyed n-best sampling.
         """
 
-        from memmark.backends.base import _string_topk
+        from memmark.llm.watermarked import make_watermarked_graphiti_client
 
-        return _string_topk(self._memories, text, k)
-
-    def candidate_link_targets(self, text: str, k: int = 5):
-        from memmark.backends.base import _string_topk
-
-        return _string_topk(self._memories, text, k)
+        if self.graphiti is not None and hasattr(self.graphiti, "llm_client"):
+            self.graphiti.llm_client = make_watermarked_graphiti_client(
+                sampler, self.graphiti.llm_client
+            )
 
     async def search_async(self, query: str, top_k: int = 5):
         return await self.graphiti.search(

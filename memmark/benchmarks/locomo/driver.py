@@ -180,6 +180,24 @@ class LoCoMoDriver:
                     conversation, session, turns, result, recent_dialog_ids
                 )
 
+        # Audits and decisions accumulated *inside* the SDK's LLM
+        # calls during ingest. The sampler holds them; copy into the
+        # result so downstream RQ runners see the same shape they used
+        # to (per-LLM-call now, instead of per-event).
+        result.audits = list(self.wm.audits)
+        result.decisions = [
+            DecisionPoint(
+                decision_id=a.decision_id,
+                tau=a.tau,
+                candidates=a.candidates or [],
+                probabilities=a.probabilities or {},
+                context=a.context,
+                round_num=a.round_num,
+                nonce=a.nonce,
+                watermark_version=a.watermark_version,
+            )
+            for a in result.audits
+        ]
         result.anchor = self.wm.seal_session()
         result.memory_snapshot_final = self.wm.backend.snapshot()
         result.capacity_stats = _capacity_stats(result.audits, result.decisions)
@@ -357,17 +375,38 @@ class LoCoMoDriver:
         result: "LoCoMoDriverResult",
         source_label: str,
     ) -> None:
+        """Push one memory event into the backend.
+
+        Watermark bits are embedded inside the backend's own internal
+        LLM calls (intercepted by ``WatermarkedSampler``). The driver
+        just hands the SDK the event text; per-LLM-call audit records
+        accumulate in ``self.wm.audits`` automatically.
+
+        We thread LoCoMo metadata into the sampler's event_context so
+        each audit record can be linked back to the dia_id that
+        triggered the LLM cascade.
+        """
+
+        self.wm.set_event_context(
+            dia_ids=list(dia_ids),
+            session_index=session_index,
+            session_date_time=session_date_time,
+            speaker=speaker,
+            recent_dialog_ids=list(recent_dialog_ids),
+            source_label=source_label,
+        )
+        before = len(self.wm.audits)
+        operation = {
+            "op": "add_memory",
+            "text": event_text,
+            "dia_ids": list(dia_ids),
+            "session_index": session_index,
+            "session_date_time": session_date_time,
+            "speaker": speaker,
+        }
         try:
-            evolve_result = self.wm.evolve(
-                event_text,
-                recent_dialog_ids=recent_dialog_ids,
-                retrieved_memory_ids=None,
-                dia_ids=dia_ids,
-                session_index=session_index,
-                speaker=speaker,
-                session_date_time=session_date_time,
-            )
-        except ValueError:
+            self.wm.backend.apply(operation)
+        except Exception as exc:
             result.extracted_events.append(
                 {
                     "session": session_index,
@@ -375,12 +414,16 @@ class LoCoMoDriver:
                     "speaker": speaker,
                     "text": event_text,
                     "applied": False,
-                    "reason": "acceptance_fail",
+                    "reason": f"apply_fail: {exc.__class__.__name__}",
                 }
             )
+            self.wm.clear_event_context()
             return
-        result.decisions.append(evolve_result.decision)
-        result.audits.append(evolve_result.audit)
+        finally:
+            self.wm.clear_event_context()
+
+        new_audits = self.wm.audits[before:]
+        bits_for_event = sum(a.bits_embedded for a in new_audits)
         result.extracted_events.append(
             {
                 "session": session_index,
@@ -388,9 +431,8 @@ class LoCoMoDriver:
                 "speaker": speaker,
                 "text": event_text,
                 "applied": True,
-                "selected": evolve_result.audit.selected_candidate_id,
-                "tau": evolve_result.audit.tau,
-                "bits_embedded": evolve_result.audit.bits_embedded,
+                "llm_calls": len(new_audits),
+                "bits_embedded": bits_for_event,
             }
         )
 

@@ -89,11 +89,17 @@ class MemoryWatermarker:
         *,
         recent_dialog_ids: Optional[Iterable[str]] = None,
         retrieved_memory_ids: Optional[Iterable[str]] = None,
+        dia_ids: Optional[Iterable[str]] = None,
+        session_index: Optional[int] = None,
+        speaker: str = "",
     ) -> EvolveResult:
         event = MemoryEvent(
             event_id=f"e{self.round_num + 1}",
             text=text,
             turn_id=self.round_num + 1,
+            dia_ids=tuple(dia_ids or ()),
+            session_index=session_index,
+            speaker=speaker,
         )
         memory_snapshot = self.backend.snapshot()
         tau, candidates, probabilities = self._plan_carrier(event, memory_snapshot)

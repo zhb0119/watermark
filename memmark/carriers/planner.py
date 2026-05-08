@@ -47,6 +47,15 @@ class LLMCarrierPlanner:
       * `async_assess=True` — fan out the 3 carrier-feasibility prompts
         in parallel via `llm_client.complete_many`. Requires the
         client to be an AsyncOpenAIChatClient or MultiProviderClient.
+
+    Backend awareness:
+      * If `backend` is provided and exposes `candidate_update_targets`
+        / `candidate_link_targets`, the planner pulls the **real**
+        candidate set from the backend's retrieval (A-MEM ChromaDB,
+        Graphiti graph search, etc.) instead of asking the LLM to
+        invent memory_ids. This is what makes the watermark capacity
+        and per-carrier H(p_t) reflect the *backend's* intrinsic
+        decision freedom (README §10.4 RQ2 + §10.7 simplicity).
     """
 
     def __init__(
@@ -56,11 +65,15 @@ class LLMCarrierPlanner:
         fallback_carrier: Any,
         merge_gen_and_score: bool = True,
         async_assess: bool = False,
+        backend: Any = None,
+        candidate_topk: int = 5,
     ) -> None:
         self.llm_client = llm_client
         self.fallback_carrier = fallback_carrier
         self.merge_gen_and_score = merge_gen_and_score
         self.async_assess = async_assess
+        self.backend = backend
+        self.candidate_topk = candidate_topk
 
     # -- top-level entry --------------------------------------------- #
     def plan(self, event: MemoryEvent, memory_snapshot: Any) -> CarrierPlan:
@@ -229,7 +242,13 @@ class LLMCarrierPlanner:
                     candidate_id=_candidate_id("sr", event.event_id, idx, text),
                     carrier_type="semantic_realization",
                     payload={"text": text, "normalized_fact": event.text.strip()},
-                    operation={"op": "add_memory", "text": text},
+                    operation={
+                        "op": "add_memory",
+                        "text": text,
+                        "dia_ids": list(event.dia_ids),
+                        "session_index": event.session_index,
+                        "speaker": event.speaker,
+                    },
                     utility_score=1.0,
                 )
             )
@@ -238,47 +257,36 @@ class LLMCarrierPlanner:
     def _generate_update_target(
         self, event: MemoryEvent, memory_snapshot: Any
     ) -> List[Candidate]:
-        if not memory_snapshot:
-            return []
-        prompt = {
-            "task": "Identify candidate existing memories to update with the incoming event.",
-            "carrier_type": "update_target",
-            "event": event.text,
-            "memory_snapshot": memory_snapshot,
-            "constraints": [
-                "Pick 2 to 5 existing memories whose content is plausibly the same fact.",
-                "Each candidate is identified by its memory id (the `id` field).",
-                "Return JSON array of objects with `memory_id` and `reason` fields.",
-            ],
-        }
-        raw = self.llm_client.complete(
-            [
-                {"role": "system", "content": "Return only strict JSON array."},
-                {"role": "user", "content": json.dumps(prompt, ensure_ascii=False)},
-            ],
-            temperature=0.7,
+        """Real backend candidates: pull top-k via backend's own
+        retrieval (e.g., A-MEM ChromaDB) so the candidate set reflects
+        the backend's intrinsic update freedom, not what the LLM
+        invents.
+        """
+
+        candidate_records = self._backend_candidates(
+            "candidate_update_targets", event, memory_snapshot
         )
-        parsed = self._extract_json(raw)
-        ids: List[str] = []
-        if isinstance(parsed, list):
-            valid_ids = {str(m.get("id")) for m in memory_snapshot if isinstance(m, dict)}
-            for item in parsed:
-                if isinstance(item, dict):
-                    mid = item.get("memory_id") or item.get("id")
-                    if mid is not None and str(mid) in valid_ids:
-                        ids.append(str(mid))
-        ids = list(dict.fromkeys(ids))
         candidates: List[Candidate] = []
-        for idx, mid in enumerate(ids, start=1):
+        for idx, rec in enumerate(candidate_records, start=1):
+            mid = str(rec.get("id") or "")
+            if not mid:
+                continue
             candidates.append(
                 Candidate(
                     candidate_id=_candidate_id("ut", event.event_id, idx, mid),
                     carrier_type="update_target",
-                    payload={"memory_id": mid, "new_text": event.text},
+                    payload={
+                        "memory_id": mid,
+                        "old_text": rec.get("text", ""),
+                        "new_text": event.text,
+                    },
                     operation={
                         "op": "update_memory",
                         "memory_id": mid,
                         "text": event.text,
+                        "dia_ids": list(event.dia_ids),
+                        "session_index": event.session_index,
+                        "speaker": event.speaker,
                     },
                     utility_score=1.0,
                 )
@@ -288,51 +296,62 @@ class LLMCarrierPlanner:
     def _generate_link_target(
         self, event: MemoryEvent, memory_snapshot: Any
     ) -> List[Candidate]:
-        if not memory_snapshot:
-            return []
-        prompt = {
-            "task": "Identify candidate existing memories to which the new memory should be linked.",
-            "carrier_type": "link_target",
-            "event": event.text,
-            "memory_snapshot": memory_snapshot,
-            "constraints": [
-                "Pick 2 to 5 existing memories that are topically related (not duplicates).",
-                "Return JSON array of objects with `memory_id` and `reason` fields.",
-            ],
-        }
-        raw = self.llm_client.complete(
-            [
-                {"role": "system", "content": "Return only strict JSON array."},
-                {"role": "user", "content": json.dumps(prompt, ensure_ascii=False)},
-            ],
-            temperature=0.7,
+        candidate_records = self._backend_candidates(
+            "candidate_link_targets", event, memory_snapshot
         )
-        parsed = self._extract_json(raw)
-        ids: List[str] = []
-        if isinstance(parsed, list):
-            valid_ids = {str(m.get("id")) for m in memory_snapshot if isinstance(m, dict)}
-            for item in parsed:
-                if isinstance(item, dict):
-                    mid = item.get("memory_id") or item.get("id")
-                    if mid is not None and str(mid) in valid_ids:
-                        ids.append(str(mid))
-        ids = list(dict.fromkeys(ids))
         candidates: List[Candidate] = []
-        for idx, mid in enumerate(ids, start=1):
+        for idx, rec in enumerate(candidate_records, start=1):
+            mid = str(rec.get("id") or "")
+            if not mid:
+                continue
             candidates.append(
                 Candidate(
                     candidate_id=_candidate_id("lt", event.event_id, idx, mid),
                     carrier_type="link_target",
-                    payload={"link_to": mid, "text": event.text},
+                    payload={
+                        "link_to": mid,
+                        "linked_text": rec.get("text", ""),
+                        "text": event.text,
+                    },
                     operation={
                         "op": "add_memory",
                         "text": event.text,
                         "links": [mid],
+                        "dia_ids": list(event.dia_ids),
+                        "session_index": event.session_index,
+                        "speaker": event.speaker,
                     },
                     utility_score=1.0,
                 )
             )
         return candidates
+
+    def _backend_candidates(
+        self,
+        method_name: str,
+        event: MemoryEvent,
+        memory_snapshot: Any,
+    ) -> List[Dict[str, Any]]:
+        """Try `backend.{method_name}(text, k)` first; fall back to
+        keyword overlap over the snapshot if backend isn't present
+        or didn't override.
+        """
+
+        if self.backend is not None and hasattr(self.backend, method_name):
+            try:
+                results = getattr(self.backend, method_name)(
+                    event.text, k=self.candidate_topk
+                )
+                if results:
+                    return list(results)
+            except Exception:
+                pass
+        # Fallback: snapshot-only string overlap
+        if not memory_snapshot:
+            return []
+        from memmark.backends.base import _string_topk
+
+        return _string_topk(memory_snapshot, event.text, self.candidate_topk)
 
     # -- candidate scoring ------------------------------------------- #
     def score_candidates(

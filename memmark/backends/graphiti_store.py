@@ -64,6 +64,9 @@ class GraphitiBackend(MemoryBackendAdapter):
 
     async def apply_async(self, operation: Dict[str, Any]) -> Dict[str, Any]:
         op = operation.get("op")
+        evidence = list(operation.get("dia_ids", []))
+        session_index = operation.get("session_index")
+        speaker = operation.get("speaker", "")
         if op == "add_memory":
             text = operation["text"]
             now = datetime.now(timezone.utc)
@@ -83,6 +86,9 @@ class GraphitiBackend(MemoryBackendAdapter):
                 "text": text,
                 "links": list(operation.get("links", [])),
                 "reference_time": now.isoformat(),
+                "dia_ids": evidence,
+                "session_index": session_index,
+                "speaker": speaker,
             }
             self._memories.append(record)
             return record
@@ -103,6 +109,14 @@ class GraphitiBackend(MemoryBackendAdapter):
                 if record["id"] == target_id:
                     record["text"] = new_text
                     record["last_update_id"] = ep_uuid
+                    if evidence:
+                        record["dia_ids"] = list(
+                            dict.fromkeys(list(record.get("dia_ids", [])) + evidence)
+                        )
+                    if session_index is not None:
+                        record["session_index"] = session_index
+                    if speaker:
+                        record["speaker"] = speaker
                     break
             return {"id": target_id, "text": new_text, "supersede_id": ep_uuid}
         if op == "delete_memory":
@@ -114,6 +128,22 @@ class GraphitiBackend(MemoryBackendAdapter):
             self._memories = [m for m in self._memories if m["id"] != target_id]
             return {"id": target_id, "deleted": True}
         raise ValueError(f"Unsupported operation: {op}")
+
+    # ----- backend-aware carrier candidates ----- #
+    def candidate_update_targets(self, text: str, k: int = 5):
+        """Graphiti's natural update targets are facts that the new
+        episode could *supersede*. We surface them via Graphiti's
+        own search (top-k semantically related facts).
+        """
+
+        from memmark.backends.base import _string_topk
+
+        return _string_topk(self._memories, text, k)
+
+    def candidate_link_targets(self, text: str, k: int = 5):
+        from memmark.backends.base import _string_topk
+
+        return _string_topk(self._memories, text, k)
 
     async def search_async(self, query: str, top_k: int = 5):
         return await self.graphiti.search(query=query, num_results=top_k)

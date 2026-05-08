@@ -28,12 +28,15 @@ import json
 import os
 from dataclasses import asdict, is_dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional  # noqa: F401
 
 from memmark.backends import JsonMemoryStore
 from memmark.baselines import build_baseline
 from memmark.benchmarks.locomo import LoCoMoDriver, load_locomo
-from memmark.benchmarks.locomo.driver import keyword_memory_extractor
+from memmark.benchmarks.locomo.qa_eval import (
+    make_locomo_qa_judge,
+    make_locomo_qa_responder,
+)
 
 
 BASELINE_LABELS = ("watermark", "no_watermark", "signed_metadata_only", "random_replace")
@@ -109,16 +112,20 @@ def main() -> None:
         )
     conv = conversations[args.conversation]
 
-    # Build LLM client + extractor + carrier planner + QA responder once,
-    # share across baselines.
-    llm_client, extractor, planner_factory, qa_responder, qa_judge = _build_llm_layer(
+    # Build LLM client + carrier planner builder + QA responder once,
+    # share across baselines. The carrier planner is per-baseline
+    # because it needs the *backend* instance for backend-aware
+    # candidates.
+    llm_client, planner_factory, qa_responder, qa_judge = _build_llm_layer(
         args.llm_mode, async_assess=args.async_assess
     )
 
     runs = {}
     for label in args.baselines:
         backend = _build_backend(args.backend, args.amem_model_name)
-        carrier_planner = planner_factory() if planner_factory else None
+        carrier_planner = (
+            planner_factory(backend) if planner_factory else None
+        )
         wm = build_baseline(
             label,
             backend=backend,
@@ -131,7 +138,6 @@ def main() -> None:
         )
         driver = LoCoMoDriver(
             watermarker=wm,
-            memory_extractor=extractor,
             qa_responder=qa_responder,
             qa_judge=qa_judge,
             max_sessions=args.max_sessions,
@@ -142,7 +148,8 @@ def main() -> None:
         print(
             f"[{label}] decisions={len(result.audits)} "
             f"bits_embedded={result.bits_embedded_total} "
-            f"qa={len(result.qa_predictions)} acc={result.qa_accuracy:.3f}"
+            f"qa={len(result.qa_predictions)} "
+            f"acc={result.qa_accuracy:.3f} f1={result.qa_f1_mean:.3f}"
         )
 
     # Lazy-import RQ runners (they pull torch via decoder→AgentMark)
@@ -199,10 +206,19 @@ def main() -> None:
 
 
 def _build_llm_layer(mode: str, *, async_assess: bool):
-    """Return (llm_client, extractor, planner_factory, qa_responder, qa_judge)."""
+    """Return (llm_client, planner_factory, qa_responder, qa_judge).
+
+    planner_factory takes the backend so it can construct a
+    backend-aware LLMCarrierPlanner that pulls candidate update / link
+    targets from the backend's *real* retrieval (A-MEM ChromaDB,
+    Graphiti graph, etc.), not from a homemade LLM prompt.
+
+    QA responder + judge use the LoCoMo official prompts + F1 metric
+    (memmark.benchmarks.locomo.qa_eval).
+    """
 
     if mode == "stub":
-        return None, keyword_memory_extractor, None, None, None
+        return None, None, None, None
 
     # mode == "real"
     from memmark.carriers.planner import LLMCarrierPlanner
@@ -216,168 +232,20 @@ def _build_llm_layer(mode: str, *, async_assess: bool):
     else:
         llm_client = OpenAIChatClient()
 
-    extractor = _make_llm_extractor(llm_client)
     fallback = SemanticRealizationCarrier()
 
-    def planner_factory():
+    def planner_factory(backend):
         return LLMCarrierPlanner(
             llm_client=llm_client,
             fallback_carrier=fallback,
             merge_gen_and_score=True,
             async_assess=async_assess,
+            backend=backend,
         )
 
-    qa_responder = _make_llm_qa_responder(llm_client)
-    qa_judge = _make_llm_qa_judge(llm_client)
-    return llm_client, extractor, planner_factory, qa_responder, qa_judge
-
-
-def _make_llm_extractor(llm_client):
-    """Step 3 in the diagram: LLM extracts durable facts from a turn."""
-
-    def extractor(turn, session_summary):
-        text = (turn.text or "").strip()
-        if not text:
-            return []
-        prompt = [
-            {
-                "role": "system",
-                "content": (
-                    "Extract durable long-term memory facts from this dialog turn. "
-                    "Include stable preferences, plans, identity, dated events, "
-                    "concrete numbers, locations. Skip greetings / chitchat. "
-                    'Return strict JSON array of strings (e.g. ["..."]). '
-                    "Return [] if nothing durable."
-                ),
-            },
-            {
-                "role": "user",
-                "content": (
-                    f"Speaker: {turn.speaker}\n"
-                    f"DiaID: {turn.dia_id}\n"
-                    f"Text: {text}\n"
-                    f"Session summary: {session_summary or '(none)'}"
-                ),
-            },
-        ]
-        try:
-            raw = llm_client.complete(prompt, temperature=0.0)
-        except Exception:
-            return []
-        return _parse_str_array(raw)
-
-    return extractor
-
-
-def _make_llm_qa_responder(llm_client):
-    """Step 8 in the diagram: answer QA using ONLY the memory snapshot."""
-
-    def responder(question, memory_snapshot):
-        prompt = [
-            {
-                "role": "system",
-                "content": (
-                    "You are a forensic auditor answering questions ONLY from "
-                    "the long-term memory snapshot below. Be concise. If the "
-                    "answer is not in memory, reply exactly: I don't know."
-                ),
-            },
-            {
-                "role": "user",
-                "content": (
-                    "Memory snapshot (JSON):\n"
-                    f"{json.dumps(memory_snapshot, ensure_ascii=False)[:6000]}\n\n"
-                    f"Question: {question.question}\n"
-                    "Answer (concise):"
-                ),
-            },
-        ]
-        try:
-            return llm_client.complete(prompt, temperature=0.0).strip()
-        except Exception:
-            return ""
-
-    return responder
-
-
-def _make_llm_qa_judge(llm_client):
-    """LLM-as-judge for fuzzy match against gold answer.
-
-    Falls back to simple substring match if the LLM call fails.
-    """
-
-    def judge(question, answer):
-        if not answer:
-            return False
-        gold = (question.answer or "").strip()
-        if not gold:
-            return False
-        # Cheap pre-check: exact / substring
-        if gold.lower() in answer.lower() or answer.lower() in gold.lower():
-            return True
-        prompt = [
-            {
-                "role": "system",
-                "content": (
-                    "You judge whether a predicted answer is consistent with the gold answer. "
-                    "Return strict JSON: {\"correct\": true} or {\"correct\": false}."
-                ),
-            },
-            {
-                "role": "user",
-                "content": (
-                    f"Question: {question.question}\n"
-                    f"Gold: {gold}\n"
-                    f"Predicted: {answer}"
-                ),
-            },
-        ]
-        try:
-            raw = llm_client.complete(prompt, temperature=0.0)
-            parsed = _parse_json_obj(raw)
-            return bool(parsed.get("correct"))
-        except Exception:
-            return False
-
-    return judge
-
-
-def _parse_str_array(raw: str) -> List[str]:
-    text = (raw or "").strip()
-    if not text:
-        return []
-    start = text.find("[")
-    end = text.rfind("]")
-    if start < 0 or end < start:
-        return []
-    try:
-        data = json.loads(text[start : end + 1])
-    except json.JSONDecodeError:
-        return []
-    out: List[str] = []
-    if isinstance(data, list):
-        for item in data:
-            if isinstance(item, str) and item.strip():
-                out.append(item.strip())
-            elif isinstance(item, dict):
-                v = item.get("text") or item.get("fact") or item.get("memory")
-                if isinstance(v, str) and v.strip():
-                    out.append(v.strip())
-    return out
-
-
-def _parse_json_obj(raw: str) -> dict:
-    text = (raw or "").strip()
-    if not text:
-        return {}
-    start = text.find("{")
-    end = text.rfind("}")
-    if start < 0 or end < start:
-        return {}
-    try:
-        return json.loads(text[start : end + 1])
-    except json.JSONDecodeError:
-        return {}
+    qa_responder = make_locomo_qa_responder(llm_client)
+    qa_judge = make_locomo_qa_judge()
+    return llm_client, planner_factory, qa_responder, qa_judge
 
 
 def _build_backend(name: str, amem_model_name: str):

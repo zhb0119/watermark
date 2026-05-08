@@ -30,10 +30,29 @@ export MEMMARK_LOCOMO_PATH=$(realpath ../locomo/data/locomo10.json)
 # 0.6 必须的 secret(签 Merkle root 用)
 export MEMMARK_KEY="memmark-research-key-please-rotate"
 
-# 0.7 LLM 凭据(选一)
-export MEMMARK_BASE_URL="https://openrouter.ai/api/v1"   # 或 deepseek 直连等
-export MEMMARK_API_KEY="<你的 OpenRouter / DeepSeek / OpenAI key>"
-export MEMMARK_MODEL="deepseek/deepseek-chat"            # 或 qwen3.5 等
+# 0.7 LLM 凭据 —— 都走 OpenAI-compatible API,任意 provider 三选一
+
+# 选项 A:DeepSeek(直连官方,headline + cost 主线)
+export MEMMARK_BASE_URL="https://api.deepseek.com"
+export MEMMARK_API_KEY="<DeepSeek key>"
+export MEMMARK_MODEL="deepseek-chat"                    # 或 deepseek-reasoner
+
+# 选项 B:Qwen3.5(走 DashScope OpenAI-compatible endpoint,reproducibility 主线)
+export MEMMARK_BASE_URL="https://dashscope.aliyuncs.com/compatible-mode/v1"
+export MEMMARK_API_KEY="<DashScope key>"
+export MEMMARK_MODEL="qwen3.5-coder-a3b-instruct"        # 或 qwen3-235b-a22b-instruct
+# 自部署 Qwen vLLM 也行:
+# export MEMMARK_BASE_URL="http://your-vllm-host:8000/v1"
+# export MEMMARK_API_KEY="EMPTY"
+# export MEMMARK_MODEL="Qwen/Qwen3.5-397B-A17B"
+
+# 选项 C:OpenRouter(同时拿 DeepSeek + Qwen + GPT-4o 一份 key)
+export MEMMARK_BASE_URL="https://openrouter.ai/api/v1"
+export MEMMARK_API_KEY="<OpenRouter key>"
+export MEMMARK_MODEL="deepseek/deepseek-chat"            # 或 qwen/qwen3.5-...
+
+# 跨 LLM ablation(§10.5 RQ3 marginal-gain 实验)只需重跑同一 conv,
+# 改 MEMMARK_MODEL,watermark_version 字段会自动区分两次 trace。
 ```
 
 > **注:** 仓库根目录里 `agentmark/` 是 AgentMark 的源码副本,不需要单独 pip install。`memmark/core/sampler.py` 直接 `from agentmark.core.watermark_sampler import sample_behavior_differential`。
@@ -507,6 +526,126 @@ done
 | `r3.bit_recovery_rate < 1.0` 在 json backend | 不可能;先看 `r1.commitment_pass_rate`,如果 < 1.0 说明 audit 落盘有 bug | 看 `r3.leaf_results` 里哪条失败 |
 | `acceptance_rate < 0.5` | 候选枚举太窄;调高 `T_enum` 或换更强 LLM | 改 `planner.py` 的 generate_candidates 温度,或 `MEMMARK_MODEL` 换成 deepseek-chat |
 | RQ4 全部 attack 都 0% recovery | 攻击实现可能改动太狠;先单独跑 `_attack_compaction(strength=0.1)` debug | 看 `rq4_robustness.py` 的 `_attack_*` 函数 |
+
+---
+
+## 11. 加速 —— 把单 cell 时长从 4 hr 砍到 < 1 hr
+
+瓶颈不是 batch_size(我们没在 train),是 **每个 evolve 决策默认要串行 5 次 LLM 调用**(extract → assess × 3 carrier → generate → score)。三件互相叠加的事:
+
+### 11.1 合并 generate + score(默认已开,~30% 加速)
+
+`LLMCarrierPlanner` 的 `merge_gen_and_score=True` 让候选枚举与打分在**一次 LLM 调用**里完成 —— 让 LLM 直接吐 `[{text/memory_id, weight}]`,Python 端做 normalize → 概率分布。
+
+无需任何改动,新代码默认 ON。手动关掉(回到旧两步):
+
+```python
+from memmark.carriers.planner import LLMCarrierPlanner
+planner = LLMCarrierPlanner(client, fallback_carrier=..., merge_gen_and_score=False)
+```
+
+### 11.2 Async carrier assess fan-out(~2× 加速)
+
+把 3 类 carrier feasibility 评估**并行**发出去。
+
+```python
+from memmark.llm import AsyncOpenAIChatClient
+from memmark.carriers.planner import LLMCarrierPlanner
+from memmark.carriers.semantic_realization import SemanticRealizationCarrier
+
+async_client = AsyncOpenAIChatClient(max_concurrency=8)
+planner = LLMCarrierPlanner(
+    async_client,
+    fallback_carrier=SemanticRealizationCarrier(),
+    async_assess=True,        # ← key flag
+)
+```
+
+要求 client 实现 `complete_many`。`AsyncOpenAIChatClient` 与 `MultiProviderClient(async_mode=True)` 都满足。
+
+### 11.3 多 provider 并发(~1.5–2× 加速,绕过单 provider rate limit)
+
+请求 round-robin 派给多个 OpenAI-compatible endpoint。**注意:论文实验的单条 trace 必须钉死一个 LLM**(否则 `watermark_version` mismatch),所以多 provider 只用于 *无 paper claim* 的开发 / debug / 加速 baseline 跑批。
+
+```python
+from memmark.llm import MultiProviderClient
+
+mp = MultiProviderClient(
+    [
+        {
+            "name": "deepseek",
+            "base_url": "https://api.deepseek.com",
+            "api_key": "<DeepSeek key>",
+            "model": "deepseek-chat",
+        },
+        {
+            "name": "qwen-dashscope",
+            "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+            "api_key": "<DashScope key>",
+            "model": "qwen3.5-coder-a3b-instruct",
+        },
+        {
+            "name": "openrouter",
+            "base_url": "https://openrouter.ai/api/v1",
+            "api_key": "<OpenRouter key>",
+            "model": "deepseek/deepseek-chat",
+        },
+    ],
+    mode="weighted_random",      # 或 "round_robin"
+    async_mode=True,             # 配合 §11.2 用,效果最佳
+)
+planner = LLMCarrierPlanner(mp, fallback_carrier=..., async_assess=True)
+```
+
+### 11.4 多 conv 并行进程(N× 加速,N = 进程数)
+
+backend 进程之间相互独立(json / amem 各持一个 ChromaDB / SQLite 文件),开 GNU parallel:
+
+```bash
+parallel -j 4 \
+    "python -m memmark.examples.run_locomo_full \
+        --locomo $MEMMARK_LOCOMO_PATH \
+        --conversation {1} --backend {2} \
+        --baselines watermark no_watermark signed_metadata_only random_replace \
+        --output ./results/grid_full/{2}_conv{1}.json \
+        > ./results/grid_full/{2}_conv{1}.log 2>&1" \
+    ::: $(seq 0 9) ::: json amem
+```
+
+> Cognee 与 Graphiti **不要** parallel —— Cognee 的 SQLite + LanceDB 锁文件 / Graphiti 的 Neo4j session 都不耐多进程并发。这两个 backend 单进程串行。
+
+### 11.5 缓存 prompt → response(~2× 加速重跑)
+
+实验同一段 conv 多次(seed 改变 / baseline 切换)时,extract / assess / score 的 prompt 都是确定性的,可以缓存:
+
+```python
+import hashlib, json, os
+class CachedClient:
+    def __init__(self, inner, cache_dir=".llm_cache"):
+        self.inner = inner; os.makedirs(cache_dir, exist_ok=True); self.cache_dir = cache_dir
+    def complete(self, messages, **kw):
+        key = hashlib.sha256(json.dumps([messages, kw], sort_keys=True, default=str).encode()).hexdigest()
+        path = f"{self.cache_dir}/{key}.txt"
+        if os.path.exists(path): return open(path).read()
+        out = self.inner.complete(messages, **kw)
+        open(path, "w").write(out)
+        return out
+```
+
+把它包到 `OpenAIChatClient` 外面即可。
+
+### 11.6 加速效果总览
+
+按 `1 cell = LoCoMo 1 conv (199 QA × 27 sessions) ≈ 680 串行 LLM call ≈ 30 min wall (DeepSeek 1.3 s/call)` 算:
+
+| 优化 | 单 cell 时长 | 全网格(40 cell) wall time |
+|------|------------|------------------------|
+| 默认(全部串行,无优化) | ~30 min | ~20 hr |
+| §11.1 merge gen+score | ~22 min | ~15 hr |
+| §11.1 + §11.2 async assess | ~12 min | ~8 hr |
+| §11.1 + §11.2 + §11.3 multi-provider(2 keys) | ~6 min | ~4 hr |
+| 全部 + §11.4 4-way 进程并行 | ~6 min × 1/4 | **~1 hr** |
+| 加 §11.5 缓存(同一 conv 重跑) | ~1 min | ~30 min |
 
 ---
 

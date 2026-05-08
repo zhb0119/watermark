@@ -685,8 +685,10 @@ class LoCoMoDriver:
                 "speaker": speaker,
                 "text": event_text,
                 "applied": True,
-                "llm_calls": len(new_audits),
-                "bits_embedded": bits_for_event,
+                "selected": audit.selected_candidate_id if audit else "",
+                "tau": audit.tau if audit else "",
+                "bits_embedded": audit.bits_embedded if audit else 0,
+                "memory_record": record,
             }
         )
 
@@ -699,7 +701,7 @@ class LoCoMoDriver:
 def _capacity_stats(
     audits: List[AuditRecord], decisions: List[DecisionPoint]
 ) -> Dict[str, Any]:
-    if not audits:
+    if not audits or not decisions:
         return {
             "decisions": 0,
             "bits_embedded": 0,

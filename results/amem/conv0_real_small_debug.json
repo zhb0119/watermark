@@ -1,0 +1,2038 @@
+{
+  "config": {
+    "locomo": "C:\\桌面\\agent-mem\\watermark\\locomo\\data\\locomo10.json",
+    "conversation": 0,
+    "max_sessions": 1,
+    "max_qa": 3,
+    "backend": "amem",
+    "baselines": [
+      "watermark"
+    ],
+    "payload_bits": "1011010011101101001110110100111011010011",
+    "secret_key": "memmark-default-dev-key",
+    "amem_model_name": "C:\\桌面\\models\\all-MiniLM-L6-v2",
+    "output": ".\\results\\amem\\conv0_real_small_debug.json",
+    "llm_mode": "real",
+    "async_assess": false,
+    "progress": true
+  },
+  "conversation": {
+    "sample_id": "conv-26",
+    "session_count": 19,
+    "qa_count": 199
+  },
+  "rq1_utility": {
+    "rows": [
+      {
+        "label": "watermark",
+        "qa_accuracy": 0.0,
+        "qa_f1": 0.08333333333333333,
+        "qa_bleu1": 0.06666666666666667,
+        "qa_rougeL": 0.08333333333333333,
+        "qa_count": 3,
+        "qa_by_category": {
+          "2": {
+            "n": 2.0,
+            "f1": 0.0,
+            "bleu1": 0.0,
+            "rougeL": 0.0,
+            "judge_acc": 0.0
+          },
+          "3": {
+            "n": 1.0,
+            "f1": 0.25,
+            "bleu1": 0.2,
+            "rougeL": 0.25,
+            "judge_acc": 0.0
+          }
+        },
+        "memory_count": 10,
+        "write_failures": 0,
+        "bits_embedded": 15,
+        "capacity_bits_per_decision": 1.5
+      }
+    ],
+    "deltas": {}
+  },
+  "rq2_capacity": {
+    "watermark": {
+      "overall": {
+        "decisions": 10.0,
+        "bits_embedded": 15.0,
+        "bits_per_decision": 1.5,
+        "avg_candidate_set_size": 3.3,
+        "avg_entropy": 1.656225223380456,
+        "acceptance_rate": 1.0
+      },
+      "by_carrier": {
+        "semantic_realization": {
+          "decisions": 10.0,
+          "bits_embedded": 15.0,
+          "bits_per_decision": 1.5,
+          "avg_candidate_set_size": 3.3,
+          "avg_entropy": 1.656225223380456,
+          "acceptance_rate": 1.0
+        }
+      }
+    }
+  },
+  "rq3_in_record": {
+    "watermark": {
+      "r1": {
+        "bit_recovery_rate": 1.0,
+        "commitment_pass_rate": 1.0,
+        "bits_total": 15.0,
+        "bits_recovered": 15.0
+      },
+      "r2": {
+        "r=0.9": {
+          "kept_leaves": 9.0,
+          "anchor_signature_valid": 1.0,
+          "root_matches": 1.0,
+          "bit_recovery_rate": 0.8666666666666667,
+          "bits_recovered": 13.0,
+          "bits_total": 15.0
+        },
+        "r=0.7": {
+          "kept_leaves": 7.0,
+          "anchor_signature_valid": 1.0,
+          "root_matches": 1.0,
+          "bit_recovery_rate": 0.6666666666666666,
+          "bits_recovered": 10.0,
+          "bits_total": 15.0
+        },
+        "r=0.5": {
+          "kept_leaves": 5.0,
+          "anchor_signature_valid": 1.0,
+          "root_matches": 1.0,
+          "bit_recovery_rate": 0.4666666666666667,
+          "bits_recovered": 7.0,
+          "bits_total": 15.0
+        },
+        "r=0.3": {
+          "kept_leaves": 3.0,
+          "anchor_signature_valid": 1.0,
+          "root_matches": 1.0,
+          "bit_recovery_rate": 0.3333333333333333,
+          "bits_recovered": 5.0,
+          "bits_total": 15.0
+        },
+        "r=0.1": {
+          "kept_leaves": 1.0,
+          "anchor_signature_valid": 1.0,
+          "root_matches": 1.0,
+          "bit_recovery_rate": 0.13333333333333333,
+          "bits_recovered": 2.0,
+          "bits_total": 15.0
+        }
+      },
+      "r3": {
+        "anchor_signature_valid": 1.0,
+        "root_matches": 1.0,
+        "bit_recovery_rate": 1.0,
+        "bits_recovered": 15.0,
+        "bits_total": 15.0
+      },
+      "r3_wrong_key": {
+        "anchor_signature_valid": 0.0,
+        "bit_recovery_rate": 0.2
+      },
+      "r3_carrier_breakdown": {
+        "semantic_realization": {
+          "leaves": 10,
+          "bits_total": 15,
+          "bits_recovered": 15,
+          "bit_recovery_rate": 1.0
+        }
+      }
+    }
+  },
+  "rq4_robustness": {
+    "watermark": {
+      "pre_recovery": 1.0,
+      "outcomes": [
+        {
+          "name": "compaction",
+          "strength": 0.1,
+          "leaves_affected": 1,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 0.9333333333333333,
+          "tamper_detection_rate": 0.1
+        },
+        {
+          "name": "compaction",
+          "strength": 0.3,
+          "leaves_affected": 3,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 0.8,
+          "tamper_detection_rate": 0.3
+        },
+        {
+          "name": "compaction",
+          "strength": 0.5,
+          "leaves_affected": 5,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 0.6,
+          "tamper_detection_rate": 0.5
+        },
+        {
+          "name": "supersession",
+          "strength": 0.1,
+          "leaves_affected": 1,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 0.9333333333333333,
+          "tamper_detection_rate": 0.1
+        },
+        {
+          "name": "supersession",
+          "strength": 0.3,
+          "leaves_affected": 3,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 0.6666666666666666,
+          "tamper_detection_rate": 0.3
+        },
+        {
+          "name": "supersession",
+          "strength": 0.5,
+          "leaves_affected": 5,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 0.4666666666666667,
+          "tamper_detection_rate": 0.5
+        },
+        {
+          "name": "pruning",
+          "strength": 0.1,
+          "leaves_affected": 1,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 0.0,
+          "tamper_detection_rate": 0.0
+        },
+        {
+          "name": "pruning",
+          "strength": 0.3,
+          "leaves_affected": 3,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 0.0,
+          "tamper_detection_rate": 0.0
+        },
+        {
+          "name": "pruning",
+          "strength": 0.5,
+          "leaves_affected": 5,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 0.0,
+          "tamper_detection_rate": 0.0
+        },
+        {
+          "name": "manual_edits",
+          "strength": 0.1,
+          "leaves_affected": 1,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 0.8666666666666667,
+          "tamper_detection_rate": 0.1
+        },
+        {
+          "name": "manual_edits",
+          "strength": 0.3,
+          "leaves_affected": 3,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 0.8,
+          "tamper_detection_rate": 0.3
+        },
+        {
+          "name": "manual_edits",
+          "strength": 0.5,
+          "leaves_affected": 5,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 0.5333333333333333,
+          "tamper_detection_rate": 0.5
+        },
+        {
+          "name": "dedup",
+          "strength": 0.1,
+          "leaves_affected": 1,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 0.0,
+          "tamper_detection_rate": 0.0
+        },
+        {
+          "name": "dedup",
+          "strength": 0.3,
+          "leaves_affected": 2,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 0.0,
+          "tamper_detection_rate": 0.0
+        },
+        {
+          "name": "dedup",
+          "strength": 0.5,
+          "leaves_affected": 2,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 0.0,
+          "tamper_detection_rate": 0.0
+        },
+        {
+          "name": "paraphrase_rewrite",
+          "strength": 0.1,
+          "leaves_affected": 1,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 0.9333333333333333,
+          "tamper_detection_rate": 0.1
+        },
+        {
+          "name": "paraphrase_rewrite",
+          "strength": 0.3,
+          "leaves_affected": 3,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 0.8,
+          "tamper_detection_rate": 0.3
+        },
+        {
+          "name": "paraphrase_rewrite",
+          "strength": 0.5,
+          "leaves_affected": 5,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 0.5333333333333333,
+          "tamper_detection_rate": 0.5
+        },
+        {
+          "name": "poisoning",
+          "strength": 0.1,
+          "leaves_affected": 1,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 0.0,
+          "tamper_detection_rate": 0.09090909090909091
+        },
+        {
+          "name": "poisoning",
+          "strength": 0.3,
+          "leaves_affected": 3,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 0.0,
+          "tamper_detection_rate": 0.23076923076923078
+        },
+        {
+          "name": "poisoning",
+          "strength": 0.5,
+          "leaves_affected": 5,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 0.0,
+          "tamper_detection_rate": 0.3333333333333333
+        },
+        {
+          "name": "edge_relabel",
+          "strength": 0.1,
+          "leaves_affected": 1,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 0.8666666666666667,
+          "tamper_detection_rate": 0.1
+        },
+        {
+          "name": "edge_relabel",
+          "strength": 0.3,
+          "leaves_affected": 3,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 0.6666666666666666,
+          "tamper_detection_rate": 0.3
+        },
+        {
+          "name": "edge_relabel",
+          "strength": 0.5,
+          "leaves_affected": 5,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 0.4666666666666667,
+          "tamper_detection_rate": 0.5
+        },
+        {
+          "name": "subgraph_reanchor",
+          "strength": 0.1,
+          "leaves_affected": 1,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 0.9333333333333333,
+          "tamper_detection_rate": 0.1
+        },
+        {
+          "name": "subgraph_reanchor",
+          "strength": 0.3,
+          "leaves_affected": 3,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 0.6666666666666666,
+          "tamper_detection_rate": 0.3
+        },
+        {
+          "name": "subgraph_reanchor",
+          "strength": 0.5,
+          "leaves_affected": 5,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 0.5333333333333333,
+          "tamper_detection_rate": 0.5
+        }
+      ]
+    }
+  },
+  "rq5_integrity": {
+    "watermark": {
+      "duplication_rate": 0.0,
+      "duplicate_count": 0,
+      "update_target_accuracy": 0.0,
+      "update_target_total": 0,
+      "update_target_correct": 0,
+      "link_target_total": 0,
+      "contradiction_rate": 0.0,
+      "overall_records": 10,
+      "by_carrier_counts": {
+        "semantic_realization": 10
+      },
+      "evidence_recall_mean": 0.0,
+      "evidence_required_qas": 3,
+      "qa_with_full_evidence": 0
+    }
+  },
+  "details": {
+    "watermark": {
+      "summary": {
+        "decisions": 10,
+        "bits_embedded": 15,
+        "qa_count": 3,
+        "qa_accuracy": 0.0,
+        "qa_f1_mean": 0.08333333333333333,
+        "qa_bleu1_mean": 0.06666666666666667,
+        "qa_rougeL_mean": 0.08333333333333333,
+        "qa_judge_accuracy": 0.0,
+        "qa_metrics_by_category": {
+          "2": {
+            "n": 2.0,
+            "f1": 0.0,
+            "bleu1": 0.0,
+            "rougeL": 0.0,
+            "judge_acc": 0.0
+          },
+          "3": {
+            "n": 1.0,
+            "f1": 0.25,
+            "bleu1": 0.2,
+            "rougeL": 0.25,
+            "judge_acc": 0.0
+          }
+        },
+        "memory_count": 10
+      },
+      "qa_predictions": [
+        {
+          "index": 1,
+          "question": "When did Caroline go to the LGBTQ support group?",
+          "answer_gold": "7 May 2023",
+          "answer_pred": "No information available.",
+          "category": 2,
+          "evidence": [
+            "D1:3"
+          ],
+          "f1": 0.0,
+          "bleu1": 0.0,
+          "rougeL": 0.0,
+          "judge_correct": false,
+          "correct": false,
+          "evidence_recall": 0.0,
+          "memory_record_count": 10,
+          "qa_trace": {
+            "context": "=== Unattributed memories ===\n- Caroline attended an LGBTQ support group.\n- Caroline discovered that transgender stories were inspiring.\n- Caroline: The support group helped Caroline feel accepted and provided her with courage.\n- Caroline plans to further her education and consider different career paths.\n- Caroline is interested in counseling or mental health careers.\n- Caroline asked Melanie if the painting was hers.\n- Melanie has a packed schedule due to her children and work commitments.\n- Last year, Melanie created a painting of a lake sunrise.\n- Melanie finds painting to be an enjoyable method for expressing emotions and unwinding.\n- Melanie is a parent.",
+            "context_chars": 668,
+            "qa_template": "\nBased on the above context, write an answer in the form of a short phrase for the following question. Answer with exact words from the context whenever possible.\n\nQuestion: {q} Short answer:\n",
+            "user_prompt": "=== Unattributed memories ===\n- Caroline attended an LGBTQ support group.\n- Caroline discovered that transgender stories were inspiring.\n- Caroline: The support group helped Caroline feel accepted and provided her with courage.\n- Caroline plans to further her education and consider different career paths.\n- Caroline is interested in counseling or mental health careers.\n- Caroline asked Melanie if the painting was hers.\n- Melanie has a packed schedule due to her children and work commitments.\n- Last year, Melanie created a painting of a lake sunrise.\n- Melanie finds painting to be an enjoyable method for expressing emotions and unwinding.\n- Melanie is a parent.\nBased on the above context, write an answer in the form of a short phrase for the following question. Answer with exact words from the context whenever possible.\n\nQuestion: When did Caroline go to the LGBTQ support group? Short answer:\n",
+            "messages": [
+              {
+                "role": "system",
+                "content": "You are a careful question-answering assistant. Use ONLY the provided memory context. If the answer is not in the context, reply: 'No information available'."
+              },
+              {
+                "role": "user",
+                "content": "=== Unattributed memories ===\n- Caroline attended an LGBTQ support group.\n- Caroline discovered that transgender stories were inspiring.\n- Caroline: The support group helped Caroline feel accepted and provided her with courage.\n- Caroline plans to further her education and consider different career paths.\n- Caroline is interested in counseling or mental health careers.\n- Caroline asked Melanie if the painting was hers.\n- Melanie has a packed schedule due to her children and work commitments.\n- Last year, Melanie created a painting of a lake sunrise.\n- Melanie finds painting to be an enjoyable method for expressing emotions and unwinding.\n- Melanie is a parent.\nBased on the above context, write an answer in the form of a short phrase for the following question. Answer with exact words from the context whenever possible.\n\nQuestion: When did Caroline go to the LGBTQ support group? Short answer:\n"
+              }
+            ],
+            "max_chars": 12000,
+            "raw_response": "No information available."
+          }
+        },
+        {
+          "index": 2,
+          "question": "When did Melanie paint a sunrise?",
+          "answer_gold": "2022",
+          "answer_pred": "Last year.",
+          "category": 2,
+          "evidence": [
+            "D1:12"
+          ],
+          "f1": 0.0,
+          "bleu1": 0.0,
+          "rougeL": 0.0,
+          "judge_correct": false,
+          "correct": false,
+          "evidence_recall": 0.0,
+          "memory_record_count": 10,
+          "qa_trace": {
+            "context": "=== Unattributed memories ===\n- Caroline attended an LGBTQ support group.\n- Caroline discovered that transgender stories were inspiring.\n- Caroline: The support group helped Caroline feel accepted and provided her with courage.\n- Caroline plans to further her education and consider different career paths.\n- Caroline is interested in counseling or mental health careers.\n- Caroline asked Melanie if the painting was hers.\n- Melanie has a packed schedule due to her children and work commitments.\n- Last year, Melanie created a painting of a lake sunrise.\n- Melanie finds painting to be an enjoyable method for expressing emotions and unwinding.\n- Melanie is a parent.",
+            "context_chars": 668,
+            "qa_template": "\nBased on the above context, write an answer in the form of a short phrase for the following question. Answer with exact words from the context whenever possible.\n\nQuestion: {q} Short answer:\n",
+            "user_prompt": "=== Unattributed memories ===\n- Caroline attended an LGBTQ support group.\n- Caroline discovered that transgender stories were inspiring.\n- Caroline: The support group helped Caroline feel accepted and provided her with courage.\n- Caroline plans to further her education and consider different career paths.\n- Caroline is interested in counseling or mental health careers.\n- Caroline asked Melanie if the painting was hers.\n- Melanie has a packed schedule due to her children and work commitments.\n- Last year, Melanie created a painting of a lake sunrise.\n- Melanie finds painting to be an enjoyable method for expressing emotions and unwinding.\n- Melanie is a parent.\nBased on the above context, write an answer in the form of a short phrase for the following question. Answer with exact words from the context whenever possible.\n\nQuestion: When did Melanie paint a sunrise? Short answer:\n",
+            "messages": [
+              {
+                "role": "system",
+                "content": "You are a careful question-answering assistant. Use ONLY the provided memory context. If the answer is not in the context, reply: 'No information available'."
+              },
+              {
+                "role": "user",
+                "content": "=== Unattributed memories ===\n- Caroline attended an LGBTQ support group.\n- Caroline discovered that transgender stories were inspiring.\n- Caroline: The support group helped Caroline feel accepted and provided her with courage.\n- Caroline plans to further her education and consider different career paths.\n- Caroline is interested in counseling or mental health careers.\n- Caroline asked Melanie if the painting was hers.\n- Melanie has a packed schedule due to her children and work commitments.\n- Last year, Melanie created a painting of a lake sunrise.\n- Melanie finds painting to be an enjoyable method for expressing emotions and unwinding.\n- Melanie is a parent.\nBased on the above context, write an answer in the form of a short phrase for the following question. Answer with exact words from the context whenever possible.\n\nQuestion: When did Melanie paint a sunrise? Short answer:\n"
+              }
+            ],
+            "max_chars": 12000,
+            "raw_response": "Last year."
+          }
+        },
+        {
+          "index": 3,
+          "question": "What fields would Caroline be likely to pursue in her educaton?",
+          "answer_gold": "Psychology, counseling certification",
+          "answer_pred": "counseling or mental health careers",
+          "category": 3,
+          "evidence": [
+            "D1:9",
+            "D1:11"
+          ],
+          "f1": 0.25,
+          "bleu1": 0.2,
+          "rougeL": 0.25,
+          "judge_correct": false,
+          "correct": false,
+          "evidence_recall": 0.0,
+          "memory_record_count": 10,
+          "qa_trace": {
+            "context": "=== Unattributed memories ===\n- Caroline attended an LGBTQ support group.\n- Caroline discovered that transgender stories were inspiring.\n- Caroline: The support group helped Caroline feel accepted and provided her with courage.\n- Caroline plans to further her education and consider different career paths.\n- Caroline is interested in counseling or mental health careers.\n- Caroline asked Melanie if the painting was hers.\n- Melanie has a packed schedule due to her children and work commitments.\n- Last year, Melanie created a painting of a lake sunrise.\n- Melanie finds painting to be an enjoyable method for expressing emotions and unwinding.\n- Melanie is a parent.",
+            "context_chars": 668,
+            "qa_template": "\nBased on the above context, write an answer in the form of a short phrase for the following question. Answer with exact words from the context whenever possible.\n\nQuestion: {q} Short answer:\n",
+            "user_prompt": "=== Unattributed memories ===\n- Caroline attended an LGBTQ support group.\n- Caroline discovered that transgender stories were inspiring.\n- Caroline: The support group helped Caroline feel accepted and provided her with courage.\n- Caroline plans to further her education and consider different career paths.\n- Caroline is interested in counseling or mental health careers.\n- Caroline asked Melanie if the painting was hers.\n- Melanie has a packed schedule due to her children and work commitments.\n- Last year, Melanie created a painting of a lake sunrise.\n- Melanie finds painting to be an enjoyable method for expressing emotions and unwinding.\n- Melanie is a parent.\nBased on the above context, write an answer in the form of a short phrase for the following question. Answer with exact words from the context whenever possible.\n\nQuestion: What fields would Caroline be likely to pursue in her educaton? Short answer:\n",
+            "messages": [
+              {
+                "role": "system",
+                "content": "You are a careful question-answering assistant. Use ONLY the provided memory context. If the answer is not in the context, reply: 'No information available'."
+              },
+              {
+                "role": "user",
+                "content": "=== Unattributed memories ===\n- Caroline attended an LGBTQ support group.\n- Caroline discovered that transgender stories were inspiring.\n- Caroline: The support group helped Caroline feel accepted and provided her with courage.\n- Caroline plans to further her education and consider different career paths.\n- Caroline is interested in counseling or mental health careers.\n- Caroline asked Melanie if the painting was hers.\n- Melanie has a packed schedule due to her children and work commitments.\n- Last year, Melanie created a painting of a lake sunrise.\n- Melanie finds painting to be an enjoyable method for expressing emotions and unwinding.\n- Melanie is a parent.\nBased on the above context, write an answer in the form of a short phrase for the following question. Answer with exact words from the context whenever possible.\n\nQuestion: What fields would Caroline be likely to pursue in her educaton? Short answer:\n"
+              }
+            ],
+            "max_chars": 12000,
+            "raw_response": "counseling or mental health careers"
+          }
+        }
+      ],
+      "memory_snapshot_final": [
+        {
+          "id": "fb509361-c3a4-47ec-8268-b3c4a9e27ef0",
+          "text": "Caroline attended an LGBTQ support group.",
+          "context": "General",
+          "keywords": [],
+          "tags": [
+            "LGBTQ",
+            "support",
+            "inspiration"
+          ],
+          "links": [],
+          "category": "Uncategorized"
+        },
+        {
+          "id": "f8eb6100-fb11-4624-9bb4-8c0564b2e8f1",
+          "text": "Caroline discovered that transgender stories were inspiring.",
+          "context": "General",
+          "keywords": [],
+          "tags": [
+            "LGBTQ",
+            "support",
+            "inspiration",
+            "education",
+            "career"
+          ],
+          "links": [
+            "0"
+          ],
+          "category": "Uncategorized"
+        },
+        {
+          "id": "32cf9b6a-0bf6-4219-9c0f-46a41b6acb41",
+          "text": "Caroline: The support group helped Caroline feel accepted and provided her with courage.",
+          "context": "General",
+          "keywords": [],
+          "tags": [
+            "LGBTQ",
+            "support",
+            "inspiration",
+            "education",
+            "career"
+          ],
+          "links": [
+            "0"
+          ],
+          "category": "Uncategorized"
+        },
+        {
+          "id": "62abd476-319b-41e2-9de6-6e3677ef3a23",
+          "text": "Caroline plans to further her education and consider different career paths.",
+          "context": "General",
+          "keywords": [],
+          "tags": [
+            "LGBTQ",
+            "support"
+          ],
+          "links": [
+            "0"
+          ],
+          "category": "Uncategorized"
+        },
+        {
+          "id": "dfaea3e9-71d6-497e-a4b0-3ce100bceaca",
+          "text": "Caroline is interested in counseling or mental health careers.",
+          "context": "General",
+          "keywords": [],
+          "tags": [
+            "LGBTQ",
+            "support",
+            "inspiration"
+          ],
+          "links": [
+            "0"
+          ],
+          "category": "Uncategorized"
+        },
+        {
+          "id": "ac208e13-35b9-484e-ad07-58aa131d337d",
+          "text": "Caroline asked Melanie if the painting was hers.",
+          "context": "General",
+          "keywords": [],
+          "tags": [
+            "LGBTQ",
+            "support",
+            "inspiration"
+          ],
+          "links": [
+            "1"
+          ],
+          "category": "Uncategorized"
+        },
+        {
+          "id": "d9214577-1d67-4726-9217-452c8ed7cfb9",
+          "text": "Melanie has a packed schedule due to her children and work commitments.",
+          "context": "General",
+          "keywords": [],
+          "tags": [
+            "parenting",
+            "work-life balance"
+          ],
+          "links": [
+            "1"
+          ],
+          "category": "Uncategorized"
+        },
+        {
+          "id": "f31223d7-2c44-44cb-9f7b-a2e24fcc68fb",
+          "text": "Last year, Melanie created a painting of a lake sunrise.",
+          "context": "General",
+          "keywords": [],
+          "tags": [
+            "art",
+            "inspiration"
+          ],
+          "links": [
+            "0"
+          ],
+          "category": "Uncategorized"
+        },
+        {
+          "id": "46093784-b2aa-40b2-bdc7-f2e6b8506870",
+          "text": "Melanie finds painting to be an enjoyable method for expressing emotions and unwinding.",
+          "context": "General",
+          "keywords": [],
+          "tags": [
+            "art",
+            "inspiration"
+          ],
+          "links": [
+            "1"
+          ],
+          "category": "Uncategorized"
+        },
+        {
+          "id": "c5eac9fb-cb9e-49c4-85ed-4aa9b4e506e7",
+          "text": "Melanie is a parent.",
+          "context": "General",
+          "keywords": [],
+          "tags": [
+            "parenting",
+            "work-life balance"
+          ],
+          "links": [
+            "0"
+          ],
+          "category": "Uncategorized"
+        }
+      ],
+      "extracted_events": [
+        {
+          "session": 1,
+          "source": "fact_1",
+          "speaker": "Caroline",
+          "text": "Caroline: Caroline attended an LGBTQ support group",
+          "applied": true,
+          "selected": "sr_1_f1b08efb41",
+          "tau": "semantic_realization",
+          "bits_embedded": 2
+        },
+        {
+          "session": 1,
+          "source": "fact_1",
+          "speaker": "Caroline",
+          "text": "Caroline: Caroline found transgender stories inspiring",
+          "applied": true,
+          "selected": "sr_4_f310ade59c",
+          "tau": "semantic_realization",
+          "bits_embedded": 2
+        },
+        {
+          "session": 1,
+          "source": "fact_1",
+          "speaker": "Caroline",
+          "text": "Caroline: The support group made Caroline feel accepted and gave her courage",
+          "applied": true,
+          "selected": "sr_1_afd2c4c9b3",
+          "tau": "semantic_realization",
+          "bits_embedded": 0
+        },
+        {
+          "session": 1,
+          "source": "fact_1",
+          "speaker": "Caroline",
+          "text": "Caroline: Caroline is planning to continue her education and explore career options",
+          "applied": true,
+          "selected": "sr_1_ec5681051f",
+          "tau": "semantic_realization",
+          "bits_embedded": 1
+        },
+        {
+          "session": 1,
+          "source": "fact_1",
+          "speaker": "Caroline",
+          "text": "Caroline: Caroline is interested in counseling or mental health careers",
+          "applied": true,
+          "selected": "sr_1_1bc39df172",
+          "tau": "semantic_realization",
+          "bits_embedded": 2
+        },
+        {
+          "session": 1,
+          "source": "fact_1",
+          "speaker": "Caroline",
+          "text": "Caroline: Caroline asked Melanie if the painting was hers",
+          "applied": true,
+          "selected": "sr_1_7ada723b33",
+          "tau": "semantic_realization",
+          "bits_embedded": 1
+        },
+        {
+          "session": 1,
+          "source": "fact_1",
+          "speaker": "Melanie",
+          "text": "Melanie: Melanie has a busy schedule with kids and work",
+          "applied": true,
+          "selected": "sr_3_8b84dc6e21",
+          "tau": "semantic_realization",
+          "bits_embedded": 2
+        },
+        {
+          "session": 1,
+          "source": "fact_1",
+          "speaker": "Melanie",
+          "text": "Melanie: Melanie painted a lake sunrise last year",
+          "applied": true,
+          "selected": "sr_2_144abb4608",
+          "tau": "semantic_realization",
+          "bits_embedded": 2
+        },
+        {
+          "session": 1,
+          "source": "fact_1",
+          "speaker": "Melanie",
+          "text": "Melanie: Melanie's painting is a fun way to express feelings and relax",
+          "applied": true,
+          "selected": "sr_1_99b4bbaa89",
+          "tau": "semantic_realization",
+          "bits_embedded": 2
+        },
+        {
+          "session": 1,
+          "source": "fact_1",
+          "speaker": "Melanie",
+          "text": "Melanie: Melanie has kids",
+          "applied": true,
+          "selected": "sr_2_1f45af0bc0",
+          "tau": "semantic_realization",
+          "bits_embedded": 1
+        }
+      ],
+      "decisions": [
+        {
+          "decision_id": "d1",
+          "tau": "semantic_realization",
+          "candidates": [
+            {
+              "candidate_id": "sr_1_f1b08efb41",
+              "carrier_type": "semantic_realization",
+              "payload": {
+                "text": "Caroline attended an LGBTQ support group.",
+                "normalized_fact": "Caroline: Caroline attended an LGBTQ support group"
+              },
+              "operation": {
+                "op": "add_memory",
+                "text": "Caroline attended an LGBTQ support group."
+              },
+              "utility_score": 1.0
+            },
+            {
+              "candidate_id": "sr_2_401e408702",
+              "carrier_type": "semantic_realization",
+              "payload": {
+                "text": "Caroline participated in an LGBTQ support group.",
+                "normalized_fact": "Caroline: Caroline attended an LGBTQ support group"
+              },
+              "operation": {
+                "op": "add_memory",
+                "text": "Caroline participated in an LGBTQ support group."
+              },
+              "utility_score": 1.0
+            },
+            {
+              "candidate_id": "sr_3_b9c64601ae",
+              "carrier_type": "semantic_realization",
+              "payload": {
+                "text": "Caroline was present at an LGBTQ support group session.",
+                "normalized_fact": "Caroline: Caroline attended an LGBTQ support group"
+              },
+              "operation": {
+                "op": "add_memory",
+                "text": "Caroline was present at an LGBTQ support group session."
+              },
+              "utility_score": 1.0
+            }
+          ],
+          "probabilities": {
+            "sr_1_f1b08efb41": 0.4,
+            "sr_2_401e408702": 0.35,
+            "sr_3_b9c64601ae": 0.25
+          },
+          "context": "{\"agent_id\":\"memmark-watermark\",\"event_hash\":\"f200d93c91888c7d3a7fd3207a20cb9b3e8b382da40c57994c2f470dfee8eff8\",\"memory_hash\":\"4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945\",\"previous_commitment\":\"\",\"recent_dialog_ids\":[\"D1:3\"],\"retrieved_memory_ids\":[],\"session_id\":\"locomo-conv-26-watermark\",\"tau\":\"semantic_realization\",\"timestamp\":1778233491.0,\"turn_id\":1,\"user_id\":\"memmark-user\"}",
+          "round_num": 0,
+          "nonce": "5322ee6df3b325687ccfd84d7fddd93f428808483673b229659cc32870c222a0",
+          "watermark_version": "memmark-mvp-v0.2::model=qwen/qwen3-14b::T_score=0.0::T_enum=0.7::json_mode=true"
+        },
+        {
+          "decision_id": "d2",
+          "tau": "semantic_realization",
+          "candidates": [
+            {
+              "candidate_id": "sr_1_07b0444518",
+              "carrier_type": "semantic_realization",
+              "payload": {
+                "text": "Caroline found inspiration in transgender stories.",
+                "normalized_fact": "Caroline: Caroline found transgender stories inspiring"
+              },
+              "operation": {
+                "op": "add_memory",
+                "text": "Caroline found inspiration in transgender stories."
+              },
+              "utility_score": 1.0
+            },
+            {
+              "candidate_id": "sr_2_8f37b8af33",
+              "carrier_type": "semantic_realization",
+              "payload": {
+                "text": "Transgender stories were inspiring to Caroline.",
+                "normalized_fact": "Caroline: Caroline found transgender stories inspiring"
+              },
+              "operation": {
+                "op": "add_memory",
+                "text": "Transgender stories were inspiring to Caroline."
+              },
+              "utility_score": 1.0
+            },
+            {
+              "candidate_id": "sr_3_35f539f8fc",
+              "carrier_type": "semantic_realization",
+              "payload": {
+                "text": "Caroline was inspired by transgender stories.",
+                "normalized_fact": "Caroline: Caroline found transgender stories inspiring"
+              },
+              "operation": {
+                "op": "add_memory",
+                "text": "Caroline was inspired by transgender stories."
+              },
+              "utility_score": 1.0
+            },
+            {
+              "candidate_id": "sr_4_f310ade59c",
+              "carrier_type": "semantic_realization",
+              "payload": {
+                "text": "Caroline discovered that transgender stories were inspiring.",
+                "normalized_fact": "Caroline: Caroline found transgender stories inspiring"
+              },
+              "operation": {
+                "op": "add_memory",
+                "text": "Caroline discovered that transgender stories were inspiring."
+              },
+              "utility_score": 1.0
+            }
+          ],
+          "probabilities": {
+            "sr_1_07b0444518": 0.35000000000000003,
+            "sr_2_8f37b8af33": 0.30000000000000004,
+            "sr_3_35f539f8fc": 0.25000000000000006,
+            "sr_4_f310ade59c": 0.10000000000000002
+          },
+          "context": "{\"agent_id\":\"memmark-watermark\",\"event_hash\":\"3f24e92556bdb4016c403f19b92d24abe367aeff16fe4d2466e34c805dae6c35\",\"memory_hash\":\"d8f98fc53fbbd1a0ec284b76ec7d78ad43c48637311c0aed996fee9c7f19e856\",\"previous_commitment\":\"cffc5145474bffed5c6d13d092f172d27568b6c9f54e57fef3b5c181ecf91390\",\"recent_dialog_ids\":[\"D1:3\",\"D1:5\"],\"retrieved_memory_ids\":[],\"session_id\":\"locomo-conv-26-watermark\",\"tau\":\"semantic_realization\",\"timestamp\":1778233522.0,\"turn_id\":2,\"user_id\":\"memmark-user\"}",
+          "round_num": 1,
+          "nonce": "c5b351f99e633ae2fa57064dab21f37b9b208b856032fd69c3a4e7f3cd86b6e5",
+          "watermark_version": "memmark-mvp-v0.2::model=qwen/qwen3-14b::T_score=0.0::T_enum=0.7::json_mode=true"
+        },
+        {
+          "decision_id": "d3",
+          "tau": "semantic_realization",
+          "candidates": [
+            {
+              "candidate_id": "sr_1_afd2c4c9b3",
+              "carrier_type": "semantic_realization",
+              "payload": {
+                "text": "Caroline: The support group helped Caroline feel accepted and provided her with courage.",
+                "normalized_fact": "Caroline: The support group made Caroline feel accepted and gave her courage"
+              },
+              "operation": {
+                "op": "add_memory",
+                "text": "Caroline: The support group helped Caroline feel accepted and provided her with courage."
+              },
+              "utility_score": 1.0
+            },
+            {
+              "candidate_id": "sr_2_22bb320782",
+              "carrier_type": "semantic_realization",
+              "payload": {
+                "text": "Caroline: Being part of the support group made Caroline feel accepted and instilled courage in her.",
+                "normalized_fact": "Caroline: The support group made Caroline feel accepted and gave her courage"
+              },
+              "operation": {
+                "op": "add_memory",
+                "text": "Caroline: Being part of the support group made Caroline feel accepted and instilled courage in her."
+              },
+              "utility_score": 1.0
+            },
+            {
+              "candidate_id": "sr_3_bfc1704b1a",
+              "carrier_type": "semantic_realization",
+              "payload": {
+                "text": "Caroline: The support group gave Caroline a sense of acceptance and boosted her courage.",
+                "normalized_fact": "Caroline: The support group made Caroline feel accepted and gave her courage"
+              },
+              "operation": {
+                "op": "add_memory",
+                "text": "Caroline: The support group gave Caroline a sense of acceptance and boosted her courage."
+              },
+              "utility_score": 1.0
+            }
+          ],
+          "probabilities": {
+            "sr_1_afd2c4c9b3": 0.4,
+            "sr_2_22bb320782": 0.35,
+            "sr_3_bfc1704b1a": 0.25
+          },
+          "context": "{\"agent_id\":\"memmark-watermark\",\"event_hash\":\"83ff8ed82e8be4567d9b4aee5bf45125a2de6be2f1ec79b182ddced3edfc485f\",\"memory_hash\":\"10272b4242b4fe33f191f121d1802fdb46dd308af616067ebe6c60e7a974b7b1\",\"previous_commitment\":\"e4251942dce8823384754c7ef729c8dc69360b117251d45e942f039fe24daf88\",\"recent_dialog_ids\":[\"D1:3\",\"D1:5\",\"D1:7\"],\"retrieved_memory_ids\":[],\"session_id\":\"locomo-conv-26-watermark\",\"tau\":\"semantic_realization\",\"timestamp\":1778233562.0,\"turn_id\":3,\"user_id\":\"memmark-user\"}",
+          "round_num": 2,
+          "nonce": "f79d752d03bf738077875017f5620b9acb661db8993d8d45487a3b5567112b34",
+          "watermark_version": "memmark-mvp-v0.2::model=qwen/qwen3-14b::T_score=0.0::T_enum=0.7::json_mode=true"
+        },
+        {
+          "decision_id": "d4",
+          "tau": "semantic_realization",
+          "candidates": [
+            {
+              "candidate_id": "sr_1_ec5681051f",
+              "carrier_type": "semantic_realization",
+              "payload": {
+                "text": "Caroline plans to further her education and consider different career paths.",
+                "normalized_fact": "Caroline: Caroline is planning to continue her education and explore career options"
+              },
+              "operation": {
+                "op": "add_memory",
+                "text": "Caroline plans to further her education and consider different career paths."
+              },
+              "utility_score": 1.0
+            },
+            {
+              "candidate_id": "sr_2_784fec0708",
+              "carrier_type": "semantic_realization",
+              "payload": {
+                "text": "Caroline intends to pursue further education while examining potential career opportunities.",
+                "normalized_fact": "Caroline: Caroline is planning to continue her education and explore career options"
+              },
+              "operation": {
+                "op": "add_memory",
+                "text": "Caroline intends to pursue further education while examining potential career opportunities."
+              },
+              "utility_score": 1.0
+            },
+            {
+              "candidate_id": "sr_3_9872367228",
+              "carrier_type": "semantic_realization",
+              "payload": {
+                "text": "Caroline is looking to continue her studies and investigate various career choices.",
+                "normalized_fact": "Caroline: Caroline is planning to continue her education and explore career options"
+              },
+              "operation": {
+                "op": "add_memory",
+                "text": "Caroline is looking to continue her studies and investigate various career choices."
+              },
+              "utility_score": 1.0
+            }
+          ],
+          "probabilities": {
+            "sr_1_ec5681051f": 0.4,
+            "sr_2_784fec0708": 0.35,
+            "sr_3_9872367228": 0.25
+          },
+          "context": "{\"agent_id\":\"memmark-watermark\",\"event_hash\":\"4a1766fb01fba64e961e441816853d2033e2cc1eb0e65018c98ef46f86547a9f\",\"memory_hash\":\"99da6f57ec874c2e60dfb03112c91aa71e1479e89684234e9482a20b6fa4ee8a\",\"previous_commitment\":\"c4480f73ba3d58b59485ca39ad183c00b33f8feb92503336664dcd6683d9257a\",\"recent_dialog_ids\":[\"D1:3\",\"D1:5\",\"D1:7\",\"D1:9\"],\"retrieved_memory_ids\":[],\"session_id\":\"locomo-conv-26-watermark\",\"tau\":\"semantic_realization\",\"timestamp\":1778233613.0,\"turn_id\":4,\"user_id\":\"memmark-user\"}",
+          "round_num": 3,
+          "nonce": "f6e31d312e2b2345defb6113e5240266a2dace4a2891d5311b40a05b7e8eba96",
+          "watermark_version": "memmark-mvp-v0.2::model=qwen/qwen3-14b::T_score=0.0::T_enum=0.7::json_mode=true"
+        },
+        {
+          "decision_id": "d5",
+          "tau": "semantic_realization",
+          "candidates": [
+            {
+              "candidate_id": "sr_1_1bc39df172",
+              "carrier_type": "semantic_realization",
+              "payload": {
+                "text": "Caroline is interested in counseling or mental health careers.",
+                "normalized_fact": "Caroline: Caroline is interested in counseling or mental health careers"
+              },
+              "operation": {
+                "op": "add_memory",
+                "text": "Caroline is interested in counseling or mental health careers."
+              },
+              "utility_score": 1.0
+            },
+            {
+              "candidate_id": "sr_2_0ce9f8d876",
+              "carrier_type": "semantic_realization",
+              "payload": {
+                "text": "Caroline's career interest lies in counseling or mental health fields.",
+                "normalized_fact": "Caroline: Caroline is interested in counseling or mental health careers"
+              },
+              "operation": {
+                "op": "add_memory",
+                "text": "Caroline's career interest lies in counseling or mental health fields."
+              },
+              "utility_score": 1.0
+            },
+            {
+              "candidate_id": "sr_3_1ef00bd2b6",
+              "carrier_type": "semantic_realization",
+              "payload": {
+                "text": "Caroline is considering a career in counseling or mental health.",
+                "normalized_fact": "Caroline: Caroline is interested in counseling or mental health careers"
+              },
+              "operation": {
+                "op": "add_memory",
+                "text": "Caroline is considering a career in counseling or mental health."
+              },
+              "utility_score": 1.0
+            }
+          ],
+          "probabilities": {
+            "sr_1_1bc39df172": 0.4,
+            "sr_2_0ce9f8d876": 0.35,
+            "sr_3_1ef00bd2b6": 0.25
+          },
+          "context": "{\"agent_id\":\"memmark-watermark\",\"event_hash\":\"255948a461e007840e23985c1cebeeb32121fbaf4a4f47356618767a2596bc06\",\"memory_hash\":\"16748b00b624ea2b188e2c66ca7b66ee97a9853540a5cd71834b8c30aa2bb47d\",\"previous_commitment\":\"54178407dafb594fc97bc625c029f02fbfc746918efaddd4bef424a3968c01d6\",\"recent_dialog_ids\":[\"D1:3\",\"D1:5\",\"D1:7\",\"D1:9\",\"D1:11\"],\"retrieved_memory_ids\":[],\"session_id\":\"locomo-conv-26-watermark\",\"tau\":\"semantic_realization\",\"timestamp\":1778233655.0,\"turn_id\":5,\"user_id\":\"memmark-user\"}",
+          "round_num": 4,
+          "nonce": "8f33996084141bcb117c63888721b811e819552d7ba6efc574cd2c73b0897367",
+          "watermark_version": "memmark-mvp-v0.2::model=qwen/qwen3-14b::T_score=0.0::T_enum=0.7::json_mode=true"
+        },
+        {
+          "decision_id": "d6",
+          "tau": "semantic_realization",
+          "candidates": [
+            {
+              "candidate_id": "sr_1_7ada723b33",
+              "carrier_type": "semantic_realization",
+              "payload": {
+                "text": "Caroline asked Melanie if the painting was hers.",
+                "normalized_fact": "Caroline: Caroline asked Melanie if the painting was hers"
+              },
+              "operation": {
+                "op": "add_memory",
+                "text": "Caroline asked Melanie if the painting was hers."
+              },
+              "utility_score": 1.0
+            },
+            {
+              "candidate_id": "sr_2_5067682561",
+              "carrier_type": "semantic_realization",
+              "payload": {
+                "text": "Caroline inquired of Melanie whether the painting belonged to her.",
+                "normalized_fact": "Caroline: Caroline asked Melanie if the painting was hers"
+              },
+              "operation": {
+                "op": "add_memory",
+                "text": "Caroline inquired of Melanie whether the painting belonged to her."
+              },
+              "utility_score": 1.0
+            },
+            {
+              "candidate_id": "sr_3_0fca06462f",
+              "carrier_type": "semantic_realization",
+              "payload": {
+                "text": "Caroline questioned Melanie about the painting's ownership.",
+                "normalized_fact": "Caroline: Caroline asked Melanie if the painting was hers"
+              },
+              "operation": {
+                "op": "add_memory",
+                "text": "Caroline questioned Melanie about the painting's ownership."
+              },
+              "utility_score": 1.0
+            }
+          ],
+          "probabilities": {
+            "sr_1_7ada723b33": 0.4,
+            "sr_2_5067682561": 0.35,
+            "sr_3_0fca06462f": 0.25
+          },
+          "context": "{\"agent_id\":\"memmark-watermark\",\"event_hash\":\"83daef04fe2a3d528d7d2979a0f9fc903c899d991d6cb38001f22fdefb297cb5\",\"memory_hash\":\"37d00e65c27e0a1b23c6dce6ac0a1493ef87591efff6f10dd54927d6231c1dba\",\"previous_commitment\":\"38b39ad3ae074a494b795c70a474adedfa578f5bf07e6072f675be1210a658c3\",\"recent_dialog_ids\":[\"D1:3\",\"D1:5\",\"D1:7\",\"D1:9\",\"D1:11\",\"D1:13\"],\"retrieved_memory_ids\":[],\"session_id\":\"locomo-conv-26-watermark\",\"tau\":\"semantic_realization\",\"timestamp\":1778233689.0,\"turn_id\":6,\"user_id\":\"memmark-user\"}",
+          "round_num": 5,
+          "nonce": "84e45a97035af1edc664cb21cbc46fa576f83d128b81e5f51ea6e52115ce56bf",
+          "watermark_version": "memmark-mvp-v0.2::model=qwen/qwen3-14b::T_score=0.0::T_enum=0.7::json_mode=true"
+        },
+        {
+          "decision_id": "d7",
+          "tau": "semantic_realization",
+          "candidates": [
+            {
+              "candidate_id": "sr_1_ee05945bdc",
+              "carrier_type": "semantic_realization",
+              "payload": {
+                "text": "Melanie is juggling a hectic schedule between her children and job.",
+                "normalized_fact": "Melanie: Melanie has a busy schedule with kids and work"
+              },
+              "operation": {
+                "op": "add_memory",
+                "text": "Melanie is juggling a hectic schedule between her children and job."
+              },
+              "utility_score": 1.0
+            },
+            {
+              "candidate_id": "sr_2_b542e6d3cb",
+              "carrier_type": "semantic_realization",
+              "payload": {
+                "text": "Melanie's schedule is packed with responsibilities from both her kids and work.",
+                "normalized_fact": "Melanie: Melanie has a busy schedule with kids and work"
+              },
+              "operation": {
+                "op": "add_memory",
+                "text": "Melanie's schedule is packed with responsibilities from both her kids and work."
+              },
+              "utility_score": 1.0
+            },
+            {
+              "candidate_id": "sr_3_8b84dc6e21",
+              "carrier_type": "semantic_realization",
+              "payload": {
+                "text": "Melanie has a packed schedule due to her children and work commitments.",
+                "normalized_fact": "Melanie: Melanie has a busy schedule with kids and work"
+              },
+              "operation": {
+                "op": "add_memory",
+                "text": "Melanie has a packed schedule due to her children and work commitments."
+              },
+              "utility_score": 1.0
+            },
+            {
+              "candidate_id": "sr_4_e9703cb691",
+              "carrier_type": "semantic_realization",
+              "payload": {
+                "text": "Melanie's life is busy with kids and work, leaving little free time.",
+                "normalized_fact": "Melanie: Melanie has a busy schedule with kids and work"
+              },
+              "operation": {
+                "op": "add_memory",
+                "text": "Melanie's life is busy with kids and work, leaving little free time."
+              },
+              "utility_score": 1.0
+            }
+          ],
+          "probabilities": {
+            "sr_1_ee05945bdc": 0.35000000000000003,
+            "sr_2_b542e6d3cb": 0.30000000000000004,
+            "sr_3_8b84dc6e21": 0.25000000000000006,
+            "sr_4_e9703cb691": 0.10000000000000002
+          },
+          "context": "{\"agent_id\":\"memmark-watermark\",\"event_hash\":\"4969ddb1e362bb288a3fb5637e87342b7261b73a1ad704f418be2b8168ae9619\",\"memory_hash\":\"4efc1f58dd3a17fab43d8ba81415956c28907d3e5452b68adfef56b629bac014\",\"previous_commitment\":\"3ce488bf4fb7bebfd6818df1eb277fa1fd26fb9fdd0da1bbc9e191bca7d137e6\",\"recent_dialog_ids\":[\"D1:3\",\"D1:5\",\"D1:7\",\"D1:9\",\"D1:11\",\"D1:13\",\"D1:2\"],\"retrieved_memory_ids\":[],\"session_id\":\"locomo-conv-26-watermark\",\"tau\":\"semantic_realization\",\"timestamp\":1778233731.0,\"turn_id\":7,\"user_id\":\"memmark-user\"}",
+          "round_num": 6,
+          "nonce": "b99489315e9ed294000baea15f2c50d11ebbeaf7d8890bf619eaeea1651d2478",
+          "watermark_version": "memmark-mvp-v0.2::model=qwen/qwen3-14b::T_score=0.0::T_enum=0.7::json_mode=true"
+        },
+        {
+          "decision_id": "d8",
+          "tau": "semantic_realization",
+          "candidates": [
+            {
+              "candidate_id": "sr_1_7988d99591",
+              "carrier_type": "semantic_realization",
+              "payload": {
+                "text": "Melanie painted a sunrise over a lake last year.",
+                "normalized_fact": "Melanie: Melanie painted a lake sunrise last year"
+              },
+              "operation": {
+                "op": "add_memory",
+                "text": "Melanie painted a sunrise over a lake last year."
+              },
+              "utility_score": 1.0
+            },
+            {
+              "candidate_id": "sr_2_144abb4608",
+              "carrier_type": "semantic_realization",
+              "payload": {
+                "text": "Last year, Melanie created a painting of a lake sunrise.",
+                "normalized_fact": "Melanie: Melanie painted a lake sunrise last year"
+              },
+              "operation": {
+                "op": "add_memory",
+                "text": "Last year, Melanie created a painting of a lake sunrise."
+              },
+              "utility_score": 1.0
+            },
+            {
+              "candidate_id": "sr_3_9eeb1e15cc",
+              "carrier_type": "semantic_realization",
+              "payload": {
+                "text": "Melanie painted a lake sunrise in the past year.",
+                "normalized_fact": "Melanie: Melanie painted a lake sunrise last year"
+              },
+              "operation": {
+                "op": "add_memory",
+                "text": "Melanie painted a lake sunrise in the past year."
+              },
+              "utility_score": 1.0
+            }
+          ],
+          "probabilities": {
+            "sr_1_7988d99591": 0.4,
+            "sr_2_144abb4608": 0.35,
+            "sr_3_9eeb1e15cc": 0.25
+          },
+          "context": "{\"agent_id\":\"memmark-watermark\",\"event_hash\":\"b369be520a52207619d22d18a8703bd7e66259b6973160f87374ed1f8d7e698e\",\"memory_hash\":\"ccdb0c5428c8bec65f45c320648729f0b5c0c4552d8eb2c3a8ac4cae9333406e\",\"previous_commitment\":\"d16ba105d09f0a1f1fd657b16dcc09dc15f6e3d01511510ce9731563e5ffb39e\",\"recent_dialog_ids\":[\"D1:3\",\"D1:5\",\"D1:7\",\"D1:9\",\"D1:11\",\"D1:13\",\"D1:2\",\"D1:14\"],\"retrieved_memory_ids\":[],\"session_id\":\"locomo-conv-26-watermark\",\"tau\":\"semantic_realization\",\"timestamp\":1778233812.0,\"turn_id\":8,\"user_id\":\"memmark-user\"}",
+          "round_num": 7,
+          "nonce": "7c430cdccc9bb07c6c1b6475e4a1f4e3bafa42787ddc13d373adfc4d3ad6acbc",
+          "watermark_version": "memmark-mvp-v0.2::model=qwen/qwen3-14b::T_score=0.0::T_enum=0.7::json_mode=true"
+        },
+        {
+          "decision_id": "d9",
+          "tau": "semantic_realization",
+          "candidates": [
+            {
+              "candidate_id": "sr_1_99b4bbaa89",
+              "carrier_type": "semantic_realization",
+              "payload": {
+                "text": "Melanie finds painting to be an enjoyable method for expressing emotions and unwinding.",
+                "normalized_fact": "Melanie: Melanie's painting is a fun way to express feelings and relax"
+              },
+              "operation": {
+                "op": "add_memory",
+                "text": "Melanie finds painting to be an enjoyable method for expressing emotions and unwinding."
+              },
+              "utility_score": 1.0
+            },
+            {
+              "candidate_id": "sr_2_a31c32442c",
+              "carrier_type": "semantic_realization",
+              "payload": {
+                "text": "Through painting, Melanie enjoys expressing her emotions and finding relaxation.",
+                "normalized_fact": "Melanie: Melanie's painting is a fun way to express feelings and relax"
+              },
+              "operation": {
+                "op": "add_memory",
+                "text": "Through painting, Melanie enjoys expressing her emotions and finding relaxation."
+              },
+              "utility_score": 1.0
+            },
+            {
+              "candidate_id": "sr_3_55849cdb82",
+              "carrier_type": "semantic_realization",
+              "payload": {
+                "text": "Melanie uses painting as a fun activity to convey emotions and relax.",
+                "normalized_fact": "Melanie: Melanie's painting is a fun way to express feelings and relax"
+              },
+              "operation": {
+                "op": "add_memory",
+                "text": "Melanie uses painting as a fun activity to convey emotions and relax."
+              },
+              "utility_score": 1.0
+            },
+            {
+              "candidate_id": "sr_4_b7c02523a7",
+              "carrier_type": "semantic_realization",
+              "payload": {
+                "text": "Painting serves as a fun outlet for Melanie to express her feelings and relax.",
+                "normalized_fact": "Melanie: Melanie's painting is a fun way to express feelings and relax"
+              },
+              "operation": {
+                "op": "add_memory",
+                "text": "Painting serves as a fun outlet for Melanie to express her feelings and relax."
+              },
+              "utility_score": 1.0
+            }
+          ],
+          "probabilities": {
+            "sr_1_99b4bbaa89": 0.35000000000000003,
+            "sr_2_a31c32442c": 0.30000000000000004,
+            "sr_3_55849cdb82": 0.25000000000000006,
+            "sr_4_b7c02523a7": 0.10000000000000002
+          },
+          "context": "{\"agent_id\":\"memmark-watermark\",\"event_hash\":\"6c0fc737dfc65cae0c1e51f0e7dd23679bd32e6dbddde2b25ce5c935538fe622\",\"memory_hash\":\"95e78e225c14184cc1b69ac58c245ac88522725cc4a4a9dfb9e2f04338626973\",\"previous_commitment\":\"5da20fcf377218b2270985b453db2320d16ed2231cd0c28141923b1cb857bda0\",\"recent_dialog_ids\":[\"D1:5\",\"D1:7\",\"D1:9\",\"D1:11\",\"D1:13\",\"D1:2\",\"D1:14\",\"D1:16\"],\"retrieved_memory_ids\":[],\"session_id\":\"locomo-conv-26-watermark\",\"tau\":\"semantic_realization\",\"timestamp\":1778233906.0,\"turn_id\":9,\"user_id\":\"memmark-user\"}",
+          "round_num": 8,
+          "nonce": "ce73de2045f5af3daaa32ff352fb020c32890323be0ee7a3ad3edbf716fe34f5",
+          "watermark_version": "memmark-mvp-v0.2::model=qwen/qwen3-14b::T_score=0.0::T_enum=0.7::json_mode=true"
+        },
+        {
+          "decision_id": "d10",
+          "tau": "semantic_realization",
+          "candidates": [
+            {
+              "candidate_id": "sr_1_eb11782f26",
+              "carrier_type": "semantic_realization",
+              "payload": {
+                "text": "Melanie has children.",
+                "normalized_fact": "Melanie: Melanie has kids"
+              },
+              "operation": {
+                "op": "add_memory",
+                "text": "Melanie has children."
+              },
+              "utility_score": 1.0
+            },
+            {
+              "candidate_id": "sr_2_1f45af0bc0",
+              "carrier_type": "semantic_realization",
+              "payload": {
+                "text": "Melanie is a parent.",
+                "normalized_fact": "Melanie: Melanie has kids"
+              },
+              "operation": {
+                "op": "add_memory",
+                "text": "Melanie is a parent."
+              },
+              "utility_score": 1.0
+            },
+            {
+              "candidate_id": "sr_3_e616614bff",
+              "carrier_type": "semantic_realization",
+              "payload": {
+                "text": "Melanie has offspring.",
+                "normalized_fact": "Melanie: Melanie has kids"
+              },
+              "operation": {
+                "op": "add_memory",
+                "text": "Melanie has offspring."
+              },
+              "utility_score": 1.0
+            }
+          ],
+          "probabilities": {
+            "sr_1_eb11782f26": 0.4,
+            "sr_2_1f45af0bc0": 0.35,
+            "sr_3_e616614bff": 0.25
+          },
+          "context": "{\"agent_id\":\"memmark-watermark\",\"event_hash\":\"6b3588bd21644b7ab60c2e803daec2535abde2b76bc663ce21d83f501bd804cb\",\"memory_hash\":\"26a2568a6ec980170e3bbbb0ed1bbb15da41c9ecfc2e14bc5be7e4f3379cebbb\",\"previous_commitment\":\"1bcc57cafe0393919708a4861433968a5478b9bc5a262a09f64ab4af0fed96ca\",\"recent_dialog_ids\":[\"D1:7\",\"D1:9\",\"D1:11\",\"D1:13\",\"D1:2\",\"D1:14\",\"D1:16\",\"D1:18\"],\"retrieved_memory_ids\":[],\"session_id\":\"locomo-conv-26-watermark\",\"tau\":\"semantic_realization\",\"timestamp\":1778233976.0,\"turn_id\":10,\"user_id\":\"memmark-user\"}",
+          "round_num": 9,
+          "nonce": "cff41bbe9198a4a7dd5c646df63dd9270ffb1e3d9c728f197398f39b14b15206",
+          "watermark_version": "memmark-mvp-v0.2::model=qwen/qwen3-14b::T_score=0.0::T_enum=0.7::json_mode=true"
+        }
+      ],
+      "audits": [
+        {
+          "decision_id": "d1",
+          "tau": "semantic_realization",
+          "candidate_hash": "f8fdf2b7a6490a0a3cffa3eacdff9d6b65a6465df1f11637ac4dc7f41736bc91",
+          "probability_hash": "35a39f6d37e978829256939d041aa6f0f630d850bceaa3049df2bba7d310e391",
+          "context": "{\"agent_id\":\"memmark-watermark\",\"event_hash\":\"f200d93c91888c7d3a7fd3207a20cb9b3e8b382da40c57994c2f470dfee8eff8\",\"memory_hash\":\"4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945\",\"previous_commitment\":\"\",\"recent_dialog_ids\":[\"D1:3\"],\"retrieved_memory_ids\":[],\"session_id\":\"locomo-conv-26-watermark\",\"tau\":\"semantic_realization\",\"timestamp\":1778233491.0,\"turn_id\":1,\"user_id\":\"memmark-user\"}",
+          "context_hash": "cf3e26a467c5ac50c2ecaaf943413b534f42dd3373dd724365ef5b7f0dd8d163",
+          "selected_candidate_id": "sr_1_f1b08efb41",
+          "bits_embedded": 2,
+          "bit_index_after": 2,
+          "round_num": 0,
+          "commitment": "cffc5145474bffed5c6d13d092f172d27568b6c9f54e57fef3b5c181ecf91390",
+          "nonce": "5322ee6df3b325687ccfd84d7fddd93f428808483673b229659cc32870c222a0",
+          "watermark_version": "memmark-mvp-v0.2::model=qwen/qwen3-14b::T_score=0.0::T_enum=0.7::json_mode=true",
+          "decoded_bits": null,
+          "candidates": [
+            {
+              "candidate_id": "sr_1_f1b08efb41",
+              "carrier_type": "semantic_realization",
+              "payload": {
+                "text": "Caroline attended an LGBTQ support group.",
+                "normalized_fact": "Caroline: Caroline attended an LGBTQ support group"
+              },
+              "operation": {
+                "op": "add_memory",
+                "text": "Caroline attended an LGBTQ support group."
+              },
+              "utility_score": 1.0
+            },
+            {
+              "candidate_id": "sr_2_401e408702",
+              "carrier_type": "semantic_realization",
+              "payload": {
+                "text": "Caroline participated in an LGBTQ support group.",
+                "normalized_fact": "Caroline: Caroline attended an LGBTQ support group"
+              },
+              "operation": {
+                "op": "add_memory",
+                "text": "Caroline participated in an LGBTQ support group."
+              },
+              "utility_score": 1.0
+            },
+            {
+              "candidate_id": "sr_3_b9c64601ae",
+              "carrier_type": "semantic_realization",
+              "payload": {
+                "text": "Caroline was present at an LGBTQ support group session.",
+                "normalized_fact": "Caroline: Caroline attended an LGBTQ support group"
+              },
+              "operation": {
+                "op": "add_memory",
+                "text": "Caroline was present at an LGBTQ support group session."
+              },
+              "utility_score": 1.0
+            }
+          ],
+          "probabilities": {
+            "sr_1_f1b08efb41": 0.4,
+            "sr_2_401e408702": 0.35,
+            "sr_3_b9c64601ae": 0.25
+          }
+        },
+        {
+          "decision_id": "d2",
+          "tau": "semantic_realization",
+          "candidate_hash": "53edc0428b29515667ee3d4429dfaec69888a276fa60a06f6247f270cf4a7c53",
+          "probability_hash": "98e73b54f72024bd84133d10d251f01b9cf9acdb4cf74f71f368dc60bf51add6",
+          "context": "{\"agent_id\":\"memmark-watermark\",\"event_hash\":\"3f24e92556bdb4016c403f19b92d24abe367aeff16fe4d2466e34c805dae6c35\",\"memory_hash\":\"d8f98fc53fbbd1a0ec284b76ec7d78ad43c48637311c0aed996fee9c7f19e856\",\"previous_commitment\":\"cffc5145474bffed5c6d13d092f172d27568b6c9f54e57fef3b5c181ecf91390\",\"recent_dialog_ids\":[\"D1:3\",\"D1:5\"],\"retrieved_memory_ids\":[],\"session_id\":\"locomo-conv-26-watermark\",\"tau\":\"semantic_realization\",\"timestamp\":1778233522.0,\"turn_id\":2,\"user_id\":\"memmark-user\"}",
+          "context_hash": "47f105081dfccd00f0425f19ced381133a4e5f925bf5095aa4e4975660cab80a",
+          "selected_candidate_id": "sr_4_f310ade59c",
+          "bits_embedded": 2,
+          "bit_index_after": 4,
+          "round_num": 1,
+          "commitment": "e4251942dce8823384754c7ef729c8dc69360b117251d45e942f039fe24daf88",
+          "nonce": "c5b351f99e633ae2fa57064dab21f37b9b208b856032fd69c3a4e7f3cd86b6e5",
+          "watermark_version": "memmark-mvp-v0.2::model=qwen/qwen3-14b::T_score=0.0::T_enum=0.7::json_mode=true",
+          "decoded_bits": null,
+          "candidates": [
+            {
+              "candidate_id": "sr_1_07b0444518",
+              "carrier_type": "semantic_realization",
+              "payload": {
+                "text": "Caroline found inspiration in transgender stories.",
+                "normalized_fact": "Caroline: Caroline found transgender stories inspiring"
+              },
+              "operation": {
+                "op": "add_memory",
+                "text": "Caroline found inspiration in transgender stories."
+              },
+              "utility_score": 1.0
+            },
+            {
+              "candidate_id": "sr_2_8f37b8af33",
+              "carrier_type": "semantic_realization",
+              "payload": {
+                "text": "Transgender stories were inspiring to Caroline.",
+                "normalized_fact": "Caroline: Caroline found transgender stories inspiring"
+              },
+              "operation": {
+                "op": "add_memory",
+                "text": "Transgender stories were inspiring to Caroline."
+              },
+              "utility_score": 1.0
+            },
+            {
+              "candidate_id": "sr_3_35f539f8fc",
+              "carrier_type": "semantic_realization",
+              "payload": {
+                "text": "Caroline was inspired by transgender stories.",
+                "normalized_fact": "Caroline: Caroline found transgender stories inspiring"
+              },
+              "operation": {
+                "op": "add_memory",
+                "text": "Caroline was inspired by transgender stories."
+              },
+              "utility_score": 1.0
+            },
+            {
+              "candidate_id": "sr_4_f310ade59c",
+              "carrier_type": "semantic_realization",
+              "payload": {
+                "text": "Caroline discovered that transgender stories were inspiring.",
+                "normalized_fact": "Caroline: Caroline found transgender stories inspiring"
+              },
+              "operation": {
+                "op": "add_memory",
+                "text": "Caroline discovered that transgender stories were inspiring."
+              },
+              "utility_score": 1.0
+            }
+          ],
+          "probabilities": {
+            "sr_1_07b0444518": 0.35000000000000003,
+            "sr_2_8f37b8af33": 0.30000000000000004,
+            "sr_3_35f539f8fc": 0.25000000000000006,
+            "sr_4_f310ade59c": 0.10000000000000002
+          }
+        },
+        {
+          "decision_id": "d3",
+          "tau": "semantic_realization",
+          "candidate_hash": "ccd48bc31423d953b05b70dd08e265ac0fd8f466d30086f29ac881953c76d3b5",
+          "probability_hash": "68f96bf10e15f157e728902e13148cb3a1944e3d6e699f158f7383232944dc06",
+          "context": "{\"agent_id\":\"memmark-watermark\",\"event_hash\":\"83ff8ed82e8be4567d9b4aee5bf45125a2de6be2f1ec79b182ddced3edfc485f\",\"memory_hash\":\"10272b4242b4fe33f191f121d1802fdb46dd308af616067ebe6c60e7a974b7b1\",\"previous_commitment\":\"e4251942dce8823384754c7ef729c8dc69360b117251d45e942f039fe24daf88\",\"recent_dialog_ids\":[\"D1:3\",\"D1:5\",\"D1:7\"],\"retrieved_memory_ids\":[],\"session_id\":\"locomo-conv-26-watermark\",\"tau\":\"semantic_realization\",\"timestamp\":1778233562.0,\"turn_id\":3,\"user_id\":\"memmark-user\"}",
+          "context_hash": "635f396dcffde323bed5268873d65efecc638d5c0d7f5eb21ade93371488f255",
+          "selected_candidate_id": "sr_1_afd2c4c9b3",
+          "bits_embedded": 0,
+          "bit_index_after": 4,
+          "round_num": 2,
+          "commitment": "c4480f73ba3d58b59485ca39ad183c00b33f8feb92503336664dcd6683d9257a",
+          "nonce": "f79d752d03bf738077875017f5620b9acb661db8993d8d45487a3b5567112b34",
+          "watermark_version": "memmark-mvp-v0.2::model=qwen/qwen3-14b::T_score=0.0::T_enum=0.7::json_mode=true",
+          "decoded_bits": null,
+          "candidates": [
+            {
+              "candidate_id": "sr_1_afd2c4c9b3",
+              "carrier_type": "semantic_realization",
+              "payload": {
+                "text": "Caroline: The support group helped Caroline feel accepted and provided her with courage.",
+                "normalized_fact": "Caroline: The support group made Caroline feel accepted and gave her courage"
+              },
+              "operation": {
+                "op": "add_memory",
+                "text": "Caroline: The support group helped Caroline feel accepted and provided her with courage."
+              },
+              "utility_score": 1.0
+            },
+            {
+              "candidate_id": "sr_2_22bb320782",
+              "carrier_type": "semantic_realization",
+              "payload": {
+                "text": "Caroline: Being part of the support group made Caroline feel accepted and instilled courage in her.",
+                "normalized_fact": "Caroline: The support group made Caroline feel accepted and gave her courage"
+              },
+              "operation": {
+                "op": "add_memory",
+                "text": "Caroline: Being part of the support group made Caroline feel accepted and instilled courage in her."
+              },
+              "utility_score": 1.0
+            },
+            {
+              "candidate_id": "sr_3_bfc1704b1a",
+              "carrier_type": "semantic_realization",
+              "payload": {
+                "text": "Caroline: The support group gave Caroline a sense of acceptance and boosted her courage.",
+                "normalized_fact": "Caroline: The support group made Caroline feel accepted and gave her courage"
+              },
+              "operation": {
+                "op": "add_memory",
+                "text": "Caroline: The support group gave Caroline a sense of acceptance and boosted her courage."
+              },
+              "utility_score": 1.0
+            }
+          ],
+          "probabilities": {
+            "sr_1_afd2c4c9b3": 0.4,
+            "sr_2_22bb320782": 0.35,
+            "sr_3_bfc1704b1a": 0.25
+          }
+        },
+        {
+          "decision_id": "d4",
+          "tau": "semantic_realization",
+          "candidate_hash": "91eb812a0a685f17a659bdefc4a9e6dc16a0deb73812b9ef23a99f6fc99fcc91",
+          "probability_hash": "889aa14fc2f44f18f6f5f26b9efb25cf2b378be7ff14523bf50ba832012f4906",
+          "context": "{\"agent_id\":\"memmark-watermark\",\"event_hash\":\"4a1766fb01fba64e961e441816853d2033e2cc1eb0e65018c98ef46f86547a9f\",\"memory_hash\":\"99da6f57ec874c2e60dfb03112c91aa71e1479e89684234e9482a20b6fa4ee8a\",\"previous_commitment\":\"c4480f73ba3d58b59485ca39ad183c00b33f8feb92503336664dcd6683d9257a\",\"recent_dialog_ids\":[\"D1:3\",\"D1:5\",\"D1:7\",\"D1:9\"],\"retrieved_memory_ids\":[],\"session_id\":\"locomo-conv-26-watermark\",\"tau\":\"semantic_realization\",\"timestamp\":1778233613.0,\"turn_id\":4,\"user_id\":\"memmark-user\"}",
+          "context_hash": "0fb5022c32ab56cd9cec536bfe0368e5b975739c13a6b4c549ab3ea677e82a6c",
+          "selected_candidate_id": "sr_1_ec5681051f",
+          "bits_embedded": 1,
+          "bit_index_after": 5,
+          "round_num": 3,
+          "commitment": "54178407dafb594fc97bc625c029f02fbfc746918efaddd4bef424a3968c01d6",
+          "nonce": "f6e31d312e2b2345defb6113e5240266a2dace4a2891d5311b40a05b7e8eba96",
+          "watermark_version": "memmark-mvp-v0.2::model=qwen/qwen3-14b::T_score=0.0::T_enum=0.7::json_mode=true",
+          "decoded_bits": null,
+          "candidates": [
+            {
+              "candidate_id": "sr_1_ec5681051f",
+              "carrier_type": "semantic_realization",
+              "payload": {
+                "text": "Caroline plans to further her education and consider different career paths.",
+                "normalized_fact": "Caroline: Caroline is planning to continue her education and explore career options"
+              },
+              "operation": {
+                "op": "add_memory",
+                "text": "Caroline plans to further her education and consider different career paths."
+              },
+              "utility_score": 1.0
+            },
+            {
+              "candidate_id": "sr_2_784fec0708",
+              "carrier_type": "semantic_realization",
+              "payload": {
+                "text": "Caroline intends to pursue further education while examining potential career opportunities.",
+                "normalized_fact": "Caroline: Caroline is planning to continue her education and explore career options"
+              },
+              "operation": {
+                "op": "add_memory",
+                "text": "Caroline intends to pursue further education while examining potential career opportunities."
+              },
+              "utility_score": 1.0
+            },
+            {
+              "candidate_id": "sr_3_9872367228",
+              "carrier_type": "semantic_realization",
+              "payload": {
+                "text": "Caroline is looking to continue her studies and investigate various career choices.",
+                "normalized_fact": "Caroline: Caroline is planning to continue her education and explore career options"
+              },
+              "operation": {
+                "op": "add_memory",
+                "text": "Caroline is looking to continue her studies and investigate various career choices."
+              },
+              "utility_score": 1.0
+            }
+          ],
+          "probabilities": {
+            "sr_1_ec5681051f": 0.4,
+            "sr_2_784fec0708": 0.35,
+            "sr_3_9872367228": 0.25
+          }
+        },
+        {
+          "decision_id": "d5",
+          "tau": "semantic_realization",
+          "candidate_hash": "1ccd339a328601ddd77292eac2c029c41c87fe7ae95724476fd30bda551c3f45",
+          "probability_hash": "b58ec4b9f1be4106d58f2ddc7a043b4770fcb858ba6a0286b5528aa5c3f25136",
+          "context": "{\"agent_id\":\"memmark-watermark\",\"event_hash\":\"255948a461e007840e23985c1cebeeb32121fbaf4a4f47356618767a2596bc06\",\"memory_hash\":\"16748b00b624ea2b188e2c66ca7b66ee97a9853540a5cd71834b8c30aa2bb47d\",\"previous_commitment\":\"54178407dafb594fc97bc625c029f02fbfc746918efaddd4bef424a3968c01d6\",\"recent_dialog_ids\":[\"D1:3\",\"D1:5\",\"D1:7\",\"D1:9\",\"D1:11\"],\"retrieved_memory_ids\":[],\"session_id\":\"locomo-conv-26-watermark\",\"tau\":\"semantic_realization\",\"timestamp\":1778233655.0,\"turn_id\":5,\"user_id\":\"memmark-user\"}",
+          "context_hash": "897cd53801ac25b947271d1966a1182e41e6258cbbc3281463f0fb75de5671e0",
+          "selected_candidate_id": "sr_1_1bc39df172",
+          "bits_embedded": 2,
+          "bit_index_after": 7,
+          "round_num": 4,
+          "commitment": "38b39ad3ae074a494b795c70a474adedfa578f5bf07e6072f675be1210a658c3",
+          "nonce": "8f33996084141bcb117c63888721b811e819552d7ba6efc574cd2c73b0897367",
+          "watermark_version": "memmark-mvp-v0.2::model=qwen/qwen3-14b::T_score=0.0::T_enum=0.7::json_mode=true",
+          "decoded_bits": null,
+          "candidates": [
+            {
+              "candidate_id": "sr_1_1bc39df172",
+              "carrier_type": "semantic_realization",
+              "payload": {
+                "text": "Caroline is interested in counseling or mental health careers.",
+                "normalized_fact": "Caroline: Caroline is interested in counseling or mental health careers"
+              },
+              "operation": {
+                "op": "add_memory",
+                "text": "Caroline is interested in counseling or mental health careers."
+              },
+              "utility_score": 1.0
+            },
+            {
+              "candidate_id": "sr_2_0ce9f8d876",
+              "carrier_type": "semantic_realization",
+              "payload": {
+                "text": "Caroline's career interest lies in counseling or mental health fields.",
+                "normalized_fact": "Caroline: Caroline is interested in counseling or mental health careers"
+              },
+              "operation": {
+                "op": "add_memory",
+                "text": "Caroline's career interest lies in counseling or mental health fields."
+              },
+              "utility_score": 1.0
+            },
+            {
+              "candidate_id": "sr_3_1ef00bd2b6",
+              "carrier_type": "semantic_realization",
+              "payload": {
+                "text": "Caroline is considering a career in counseling or mental health.",
+                "normalized_fact": "Caroline: Caroline is interested in counseling or mental health careers"
+              },
+              "operation": {
+                "op": "add_memory",
+                "text": "Caroline is considering a career in counseling or mental health."
+              },
+              "utility_score": 1.0
+            }
+          ],
+          "probabilities": {
+            "sr_1_1bc39df172": 0.4,
+            "sr_2_0ce9f8d876": 0.35,
+            "sr_3_1ef00bd2b6": 0.25
+          }
+        },
+        {
+          "decision_id": "d6",
+          "tau": "semantic_realization",
+          "candidate_hash": "5c5a6589fdd90f96eadd4d7155d531379b6f3263fcb87fb0eced55c1e2a25f05",
+          "probability_hash": "b2b1e2a866f561e3bb6cadd8b0b3c2f4429d4989545e5e61add80c9863e52459",
+          "context": "{\"agent_id\":\"memmark-watermark\",\"event_hash\":\"83daef04fe2a3d528d7d2979a0f9fc903c899d991d6cb38001f22fdefb297cb5\",\"memory_hash\":\"37d00e65c27e0a1b23c6dce6ac0a1493ef87591efff6f10dd54927d6231c1dba\",\"previous_commitment\":\"38b39ad3ae074a494b795c70a474adedfa578f5bf07e6072f675be1210a658c3\",\"recent_dialog_ids\":[\"D1:3\",\"D1:5\",\"D1:7\",\"D1:9\",\"D1:11\",\"D1:13\"],\"retrieved_memory_ids\":[],\"session_id\":\"locomo-conv-26-watermark\",\"tau\":\"semantic_realization\",\"timestamp\":1778233689.0,\"turn_id\":6,\"user_id\":\"memmark-user\"}",
+          "context_hash": "6572a2fedb1b97d28b01d1bbe4f407442f1ed079f6541286a470db7971933c97",
+          "selected_candidate_id": "sr_1_7ada723b33",
+          "bits_embedded": 1,
+          "bit_index_after": 8,
+          "round_num": 5,
+          "commitment": "3ce488bf4fb7bebfd6818df1eb277fa1fd26fb9fdd0da1bbc9e191bca7d137e6",
+          "nonce": "84e45a97035af1edc664cb21cbc46fa576f83d128b81e5f51ea6e52115ce56bf",
+          "watermark_version": "memmark-mvp-v0.2::model=qwen/qwen3-14b::T_score=0.0::T_enum=0.7::json_mode=true",
+          "decoded_bits": null,
+          "candidates": [
+            {
+              "candidate_id": "sr_1_7ada723b33",
+              "carrier_type": "semantic_realization",
+              "payload": {
+                "text": "Caroline asked Melanie if the painting was hers.",
+                "normalized_fact": "Caroline: Caroline asked Melanie if the painting was hers"
+              },
+              "operation": {
+                "op": "add_memory",
+                "text": "Caroline asked Melanie if the painting was hers."
+              },
+              "utility_score": 1.0
+            },
+            {
+              "candidate_id": "sr_2_5067682561",
+              "carrier_type": "semantic_realization",
+              "payload": {
+                "text": "Caroline inquired of Melanie whether the painting belonged to her.",
+                "normalized_fact": "Caroline: Caroline asked Melanie if the painting was hers"
+              },
+              "operation": {
+                "op": "add_memory",
+                "text": "Caroline inquired of Melanie whether the painting belonged to her."
+              },
+              "utility_score": 1.0
+            },
+            {
+              "candidate_id": "sr_3_0fca06462f",
+              "carrier_type": "semantic_realization",
+              "payload": {
+                "text": "Caroline questioned Melanie about the painting's ownership.",
+                "normalized_fact": "Caroline: Caroline asked Melanie if the painting was hers"
+              },
+              "operation": {
+                "op": "add_memory",
+                "text": "Caroline questioned Melanie about the painting's ownership."
+              },
+              "utility_score": 1.0
+            }
+          ],
+          "probabilities": {
+            "sr_1_7ada723b33": 0.4,
+            "sr_2_5067682561": 0.35,
+            "sr_3_0fca06462f": 0.25
+          }
+        },
+        {
+          "decision_id": "d7",
+          "tau": "semantic_realization",
+          "candidate_hash": "f18307ce07ed919a18d0358f2901728e622962141fa8345f8438f6e93a8e6d8d",
+          "probability_hash": "1c4bad089c88a61de9f1c956e7ba326cd4a18506733a42f8b7001ecd816a15b6",
+          "context": "{\"agent_id\":\"memmark-watermark\",\"event_hash\":\"4969ddb1e362bb288a3fb5637e87342b7261b73a1ad704f418be2b8168ae9619\",\"memory_hash\":\"4efc1f58dd3a17fab43d8ba81415956c28907d3e5452b68adfef56b629bac014\",\"previous_commitment\":\"3ce488bf4fb7bebfd6818df1eb277fa1fd26fb9fdd0da1bbc9e191bca7d137e6\",\"recent_dialog_ids\":[\"D1:3\",\"D1:5\",\"D1:7\",\"D1:9\",\"D1:11\",\"D1:13\",\"D1:2\"],\"retrieved_memory_ids\":[],\"session_id\":\"locomo-conv-26-watermark\",\"tau\":\"semantic_realization\",\"timestamp\":1778233731.0,\"turn_id\":7,\"user_id\":\"memmark-user\"}",
+          "context_hash": "b9980dd3f775217879913e0cc58b1b249e93a93722554cc160d7f7250cdebdb5",
+          "selected_candidate_id": "sr_3_8b84dc6e21",
+          "bits_embedded": 2,
+          "bit_index_after": 10,
+          "round_num": 6,
+          "commitment": "d16ba105d09f0a1f1fd657b16dcc09dc15f6e3d01511510ce9731563e5ffb39e",
+          "nonce": "b99489315e9ed294000baea15f2c50d11ebbeaf7d8890bf619eaeea1651d2478",
+          "watermark_version": "memmark-mvp-v0.2::model=qwen/qwen3-14b::T_score=0.0::T_enum=0.7::json_mode=true",
+          "decoded_bits": null,
+          "candidates": [
+            {
+              "candidate_id": "sr_1_ee05945bdc",
+              "carrier_type": "semantic_realization",
+              "payload": {
+                "text": "Melanie is juggling a hectic schedule between her children and job.",
+                "normalized_fact": "Melanie: Melanie has a busy schedule with kids and work"
+              },
+              "operation": {
+                "op": "add_memory",
+                "text": "Melanie is juggling a hectic schedule between her children and job."
+              },
+              "utility_score": 1.0
+            },
+            {
+              "candidate_id": "sr_2_b542e6d3cb",
+              "carrier_type": "semantic_realization",
+              "payload": {
+                "text": "Melanie's schedule is packed with responsibilities from both her kids and work.",
+                "normalized_fact": "Melanie: Melanie has a busy schedule with kids and work"
+              },
+              "operation": {
+                "op": "add_memory",
+                "text": "Melanie's schedule is packed with responsibilities from both her kids and work."
+              },
+              "utility_score": 1.0
+            },
+            {
+              "candidate_id": "sr_3_8b84dc6e21",
+              "carrier_type": "semantic_realization",
+              "payload": {
+                "text": "Melanie has a packed schedule due to her children and work commitments.",
+                "normalized_fact": "Melanie: Melanie has a busy schedule with kids and work"
+              },
+              "operation": {
+                "op": "add_memory",
+                "text": "Melanie has a packed schedule due to her children and work commitments."
+              },
+              "utility_score": 1.0
+            },
+            {
+              "candidate_id": "sr_4_e9703cb691",
+              "carrier_type": "semantic_realization",
+              "payload": {
+                "text": "Melanie's life is busy with kids and work, leaving little free time.",
+                "normalized_fact": "Melanie: Melanie has a busy schedule with kids and work"
+              },
+              "operation": {
+                "op": "add_memory",
+                "text": "Melanie's life is busy with kids and work, leaving little free time."
+              },
+              "utility_score": 1.0
+            }
+          ],
+          "probabilities": {
+            "sr_1_ee05945bdc": 0.35000000000000003,
+            "sr_2_b542e6d3cb": 0.30000000000000004,
+            "sr_3_8b84dc6e21": 0.25000000000000006,
+            "sr_4_e9703cb691": 0.10000000000000002
+          }
+        },
+        {
+          "decision_id": "d8",
+          "tau": "semantic_realization",
+          "candidate_hash": "828b4f838b6253915b04550390e5e3f9f6c3fa051382d822c25a95362ebefcd4",
+          "probability_hash": "c49521ed03bbf03beabdd54ebfd2206817aa55be2c8db42279d29ada96199cd1",
+          "context": "{\"agent_id\":\"memmark-watermark\",\"event_hash\":\"b369be520a52207619d22d18a8703bd7e66259b6973160f87374ed1f8d7e698e\",\"memory_hash\":\"ccdb0c5428c8bec65f45c320648729f0b5c0c4552d8eb2c3a8ac4cae9333406e\",\"previous_commitment\":\"d16ba105d09f0a1f1fd657b16dcc09dc15f6e3d01511510ce9731563e5ffb39e\",\"recent_dialog_ids\":[\"D1:3\",\"D1:5\",\"D1:7\",\"D1:9\",\"D1:11\",\"D1:13\",\"D1:2\",\"D1:14\"],\"retrieved_memory_ids\":[],\"session_id\":\"locomo-conv-26-watermark\",\"tau\":\"semantic_realization\",\"timestamp\":1778233812.0,\"turn_id\":8,\"user_id\":\"memmark-user\"}",
+          "context_hash": "ac2c4af4b733b25510587a5f0e8ce9d2344e37042a692fc8a09983df51540703",
+          "selected_candidate_id": "sr_2_144abb4608",
+          "bits_embedded": 2,
+          "bit_index_after": 12,
+          "round_num": 7,
+          "commitment": "5da20fcf377218b2270985b453db2320d16ed2231cd0c28141923b1cb857bda0",
+          "nonce": "7c430cdccc9bb07c6c1b6475e4a1f4e3bafa42787ddc13d373adfc4d3ad6acbc",
+          "watermark_version": "memmark-mvp-v0.2::model=qwen/qwen3-14b::T_score=0.0::T_enum=0.7::json_mode=true",
+          "decoded_bits": null,
+          "candidates": [
+            {
+              "candidate_id": "sr_1_7988d99591",
+              "carrier_type": "semantic_realization",
+              "payload": {
+                "text": "Melanie painted a sunrise over a lake last year.",
+                "normalized_fact": "Melanie: Melanie painted a lake sunrise last year"
+              },
+              "operation": {
+                "op": "add_memory",
+                "text": "Melanie painted a sunrise over a lake last year."
+              },
+              "utility_score": 1.0
+            },
+            {
+              "candidate_id": "sr_2_144abb4608",
+              "carrier_type": "semantic_realization",
+              "payload": {
+                "text": "Last year, Melanie created a painting of a lake sunrise.",
+                "normalized_fact": "Melanie: Melanie painted a lake sunrise last year"
+              },
+              "operation": {
+                "op": "add_memory",
+                "text": "Last year, Melanie created a painting of a lake sunrise."
+              },
+              "utility_score": 1.0
+            },
+            {
+              "candidate_id": "sr_3_9eeb1e15cc",
+              "carrier_type": "semantic_realization",
+              "payload": {
+                "text": "Melanie painted a lake sunrise in the past year.",
+                "normalized_fact": "Melanie: Melanie painted a lake sunrise last year"
+              },
+              "operation": {
+                "op": "add_memory",
+                "text": "Melanie painted a lake sunrise in the past year."
+              },
+              "utility_score": 1.0
+            }
+          ],
+          "probabilities": {
+            "sr_1_7988d99591": 0.4,
+            "sr_2_144abb4608": 0.35,
+            "sr_3_9eeb1e15cc": 0.25
+          }
+        },
+        {
+          "decision_id": "d9",
+          "tau": "semantic_realization",
+          "candidate_hash": "ec5a14a99b060e7d9924f2dac4d26bfe1a33f1bb99009dfe24d010940b703129",
+          "probability_hash": "94e7af9e702e6a331f94dbeaef37ad2e425b665319b52e422e349471b46eeb83",
+          "context": "{\"agent_id\":\"memmark-watermark\",\"event_hash\":\"6c0fc737dfc65cae0c1e51f0e7dd23679bd32e6dbddde2b25ce5c935538fe622\",\"memory_hash\":\"95e78e225c14184cc1b69ac58c245ac88522725cc4a4a9dfb9e2f04338626973\",\"previous_commitment\":\"5da20fcf377218b2270985b453db2320d16ed2231cd0c28141923b1cb857bda0\",\"recent_dialog_ids\":[\"D1:5\",\"D1:7\",\"D1:9\",\"D1:11\",\"D1:13\",\"D1:2\",\"D1:14\",\"D1:16\"],\"retrieved_memory_ids\":[],\"session_id\":\"locomo-conv-26-watermark\",\"tau\":\"semantic_realization\",\"timestamp\":1778233906.0,\"turn_id\":9,\"user_id\":\"memmark-user\"}",
+          "context_hash": "61437a7d225e57ca8461e716c704dbda501587bdd6f07ade77aec27a3123c182",
+          "selected_candidate_id": "sr_1_99b4bbaa89",
+          "bits_embedded": 2,
+          "bit_index_after": 14,
+          "round_num": 8,
+          "commitment": "1bcc57cafe0393919708a4861433968a5478b9bc5a262a09f64ab4af0fed96ca",
+          "nonce": "ce73de2045f5af3daaa32ff352fb020c32890323be0ee7a3ad3edbf716fe34f5",
+          "watermark_version": "memmark-mvp-v0.2::model=qwen/qwen3-14b::T_score=0.0::T_enum=0.7::json_mode=true",
+          "decoded_bits": null,
+          "candidates": [
+            {
+              "candidate_id": "sr_1_99b4bbaa89",
+              "carrier_type": "semantic_realization",
+              "payload": {
+                "text": "Melanie finds painting to be an enjoyable method for expressing emotions and unwinding.",
+                "normalized_fact": "Melanie: Melanie's painting is a fun way to express feelings and relax"
+              },
+              "operation": {
+                "op": "add_memory",
+                "text": "Melanie finds painting to be an enjoyable method for expressing emotions and unwinding."
+              },
+              "utility_score": 1.0
+            },
+            {
+              "candidate_id": "sr_2_a31c32442c",
+              "carrier_type": "semantic_realization",
+              "payload": {
+                "text": "Through painting, Melanie enjoys expressing her emotions and finding relaxation.",
+                "normalized_fact": "Melanie: Melanie's painting is a fun way to express feelings and relax"
+              },
+              "operation": {
+                "op": "add_memory",
+                "text": "Through painting, Melanie enjoys expressing her emotions and finding relaxation."
+              },
+              "utility_score": 1.0
+            },
+            {
+              "candidate_id": "sr_3_55849cdb82",
+              "carrier_type": "semantic_realization",
+              "payload": {
+                "text": "Melanie uses painting as a fun activity to convey emotions and relax.",
+                "normalized_fact": "Melanie: Melanie's painting is a fun way to express feelings and relax"
+              },
+              "operation": {
+                "op": "add_memory",
+                "text": "Melanie uses painting as a fun activity to convey emotions and relax."
+              },
+              "utility_score": 1.0
+            },
+            {
+              "candidate_id": "sr_4_b7c02523a7",
+              "carrier_type": "semantic_realization",
+              "payload": {
+                "text": "Painting serves as a fun outlet for Melanie to express her feelings and relax.",
+                "normalized_fact": "Melanie: Melanie's painting is a fun way to express feelings and relax"
+              },
+              "operation": {
+                "op": "add_memory",
+                "text": "Painting serves as a fun outlet for Melanie to express her feelings and relax."
+              },
+              "utility_score": 1.0
+            }
+          ],
+          "probabilities": {
+            "sr_1_99b4bbaa89": 0.35000000000000003,
+            "sr_2_a31c32442c": 0.30000000000000004,
+            "sr_3_55849cdb82": 0.25000000000000006,
+            "sr_4_b7c02523a7": 0.10000000000000002
+          }
+        },
+        {
+          "decision_id": "d10",
+          "tau": "semantic_realization",
+          "candidate_hash": "d4f1c3ecb4f35b6cad7e774545edb9f24a9868f06cdecf0daeb2aeca5ab2dafc",
+          "probability_hash": "bd7f86bc384382ff84e7779cfc02ac123506bf19f1a617df4a34aa616aab40bf",
+          "context": "{\"agent_id\":\"memmark-watermark\",\"event_hash\":\"6b3588bd21644b7ab60c2e803daec2535abde2b76bc663ce21d83f501bd804cb\",\"memory_hash\":\"26a2568a6ec980170e3bbbb0ed1bbb15da41c9ecfc2e14bc5be7e4f3379cebbb\",\"previous_commitment\":\"1bcc57cafe0393919708a4861433968a5478b9bc5a262a09f64ab4af0fed96ca\",\"recent_dialog_ids\":[\"D1:7\",\"D1:9\",\"D1:11\",\"D1:13\",\"D1:2\",\"D1:14\",\"D1:16\",\"D1:18\"],\"retrieved_memory_ids\":[],\"session_id\":\"locomo-conv-26-watermark\",\"tau\":\"semantic_realization\",\"timestamp\":1778233976.0,\"turn_id\":10,\"user_id\":\"memmark-user\"}",
+          "context_hash": "b6a12135b6bea8150ae6933491d43efac5b58c63645d6683c916c4eb6f7c5a5c",
+          "selected_candidate_id": "sr_2_1f45af0bc0",
+          "bits_embedded": 1,
+          "bit_index_after": 15,
+          "round_num": 9,
+          "commitment": "b0e64f18c106542f0129d040eff39bc7dc9af8d8a140a0145f18dc4660ba7fc1",
+          "nonce": "cff41bbe9198a4a7dd5c646df63dd9270ffb1e3d9c728f197398f39b14b15206",
+          "watermark_version": "memmark-mvp-v0.2::model=qwen/qwen3-14b::T_score=0.0::T_enum=0.7::json_mode=true",
+          "decoded_bits": null,
+          "candidates": [
+            {
+              "candidate_id": "sr_1_eb11782f26",
+              "carrier_type": "semantic_realization",
+              "payload": {
+                "text": "Melanie has children.",
+                "normalized_fact": "Melanie: Melanie has kids"
+              },
+              "operation": {
+                "op": "add_memory",
+                "text": "Melanie has children."
+              },
+              "utility_score": 1.0
+            },
+            {
+              "candidate_id": "sr_2_1f45af0bc0",
+              "carrier_type": "semantic_realization",
+              "payload": {
+                "text": "Melanie is a parent.",
+                "normalized_fact": "Melanie: Melanie has kids"
+              },
+              "operation": {
+                "op": "add_memory",
+                "text": "Melanie is a parent."
+              },
+              "utility_score": 1.0
+            },
+            {
+              "candidate_id": "sr_3_e616614bff",
+              "carrier_type": "semantic_realization",
+              "payload": {
+                "text": "Melanie has offspring.",
+                "normalized_fact": "Melanie: Melanie has kids"
+              },
+              "operation": {
+                "op": "add_memory",
+                "text": "Melanie has offspring."
+              },
+              "utility_score": 1.0
+            }
+          ],
+          "probabilities": {
+            "sr_1_eb11782f26": 0.4,
+            "sr_2_1f45af0bc0": 0.35,
+            "sr_3_e616614bff": 0.25
+          }
+        }
+      ],
+      "anchor": {
+        "agent_id": "memmark-watermark",
+        "user_id": "memmark-user",
+        "session_id": "locomo-conv-26-watermark",
+        "leaf_count": 10,
+        "root": "a914089b516e9283f4dfcfef9002d343751072dc8e76be350b47847f68064061",
+        "signature": "e6e6bcd074cf0c88c5f4b25c265e48e4baf37456dcba26ecca764c52eef6903e",
+        "watermark_version": "memmark-mvp-v0.2::model=qwen/qwen3-14b::T_score=0.0::T_enum=0.7::json_mode=true"
+      }
+    }
+  }
+}

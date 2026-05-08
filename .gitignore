@@ -51,11 +51,13 @@ temp_alfworld_data/
 
 # Third-party research repos cloned for memory-watermark experiments.
 # Each is its own upstream repo — see SETUP.md for clone commands.
-A-mem/
-MemoryAgentBench/
-cognee/
-graphiti/
-letta/
-locomo/
-mem0/
-Auto-claude-code-research-in-sleep/
+# IMPORTANT: anchor to repo root with "/" so we don't accidentally
+# ignore internal package dirs like memmark/benchmarks/locomo/.
+/A-mem/
+/MemoryAgentBench/
+/cognee/
+/graphiti/
+/letta/
+/locomo/
+/mem0/
+/Auto-claude-code-research-in-sleep/

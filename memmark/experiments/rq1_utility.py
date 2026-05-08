@@ -19,12 +19,16 @@ from memmark.benchmarks.locomo.driver import LoCoMoDriverResult
 @dataclass
 class UtilityRow:
     label: str
-    qa_accuracy: float
+    qa_accuracy: float           # judge accuracy (LoCoMo Table 4 column)
+    qa_f1: float                 # token F1
+    qa_bleu1: float              # BLEU-1
+    qa_rougeL: float             # ROUGE-L
     qa_count: int
-    memory_count: int
-    write_failures: int
-    bits_embedded: int
-    capacity_bits_per_decision: float
+    qa_by_category: Dict[int, Dict[str, float]] = field(default_factory=dict)
+    memory_count: int = 0
+    write_failures: int = 0
+    bits_embedded: int = 0
+    capacity_bits_per_decision: float = 0.0
 
 
 @dataclass
@@ -49,8 +53,12 @@ def run_rq1_utility(
         rows.append(
             UtilityRow(
                 label=label,
-                qa_accuracy=result.qa_accuracy,
+                qa_accuracy=result.qa_judge_accuracy,
+                qa_f1=result.qa_f1_mean,
+                qa_bleu1=result.qa_bleu1_mean,
+                qa_rougeL=result.qa_rougeL_mean,
                 qa_count=len(result.qa_predictions),
+                qa_by_category=result.qa_metrics_by_category,
                 memory_count=len(result.memory_snapshot_final),
                 write_failures=write_failures,
                 bits_embedded=result.bits_embedded_total,
@@ -66,6 +74,9 @@ def run_rq1_utility(
                 continue
             deltas[row.label] = {
                 "qa_accuracy_delta": row.qa_accuracy - base.qa_accuracy,
+                "qa_f1_delta": row.qa_f1 - base.qa_f1,
+                "qa_bleu1_delta": row.qa_bleu1 - base.qa_bleu1,
+                "qa_rougeL_delta": row.qa_rougeL - base.qa_rougeL,
                 "memory_count_delta": row.memory_count - base.memory_count,
                 "write_failures_delta": row.write_failures - base.write_failures,
             }

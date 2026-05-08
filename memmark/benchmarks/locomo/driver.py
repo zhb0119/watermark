@@ -34,8 +34,10 @@ from memmark.benchmarks.locomo.loader import (
     LoCoMoTurn,
 )
 from memmark.benchmarks.locomo.qa_eval import (
+    bleu1,
     make_locomo_qa_judge,
     make_locomo_qa_responder,
+    rouge_l,
     score_one,
 )
 from memmark.core.types import AuditRecord, DecisionPoint, SessionHeader
@@ -72,9 +74,47 @@ class LoCoMoDriverResult:
 
     @property
     def qa_f1_mean(self) -> float:
+        return self._mean_metric("f1")
+
+    @property
+    def qa_bleu1_mean(self) -> float:
+        return self._mean_metric("bleu1")
+
+    @property
+    def qa_rougeL_mean(self) -> float:
+        return self._mean_metric("rougeL")
+
+    @property
+    def qa_judge_accuracy(self) -> float:
+        return self._mean_metric("judge_correct", boolean=True)
+
+    @property
+    def qa_metrics_by_category(self) -> Dict[int, Dict[str, float]]:
+        """Per-category {f1, bleu1, rougeL, judge_acc, n} (LoCoMo Table 4 shape)."""
+
+        out: Dict[int, Dict[str, float]] = {}
+        groups: Dict[int, List[Dict[str, Any]]] = {}
+        for q in self.qa_predictions:
+            groups.setdefault(int(q.get("category", 0)), []).append(q)
+        for cat, items in groups.items():
+            n = len(items)
+            out[cat] = {
+                "n": float(n),
+                "f1": sum(q.get("f1", 0.0) for q in items) / n,
+                "bleu1": sum(q.get("bleu1", 0.0) for q in items) / n,
+                "rougeL": sum(q.get("rougeL", 0.0) for q in items) / n,
+                "judge_acc": sum(
+                    1 for q in items if q.get("judge_correct")
+                ) / n,
+            }
+        return out
+
+    def _mean_metric(self, key: str, *, boolean: bool = False) -> float:
         if not self.qa_predictions:
             return 0.0
-        return sum(q.get("f1", 0.0) for q in self.qa_predictions) / len(self.qa_predictions)
+        if boolean:
+            return sum(1 for q in self.qa_predictions if q.get(key)) / len(self.qa_predictions)
+        return sum(q.get(key, 0.0) for q in self.qa_predictions) / len(self.qa_predictions)
 
 
 class LoCoMoDriver:
@@ -175,6 +215,8 @@ class LoCoMoDriver:
                 )
             answer = self.qa_responder(q, result.memory_snapshot_final)
             f1 = score_one(answer, q.answer, q.category)
+            bleu = bleu1(answer, q.answer)
+            rouge = rouge_l(answer, q.answer)
             correct = bool(self.qa_judge(q, answer))
             evidence_recall = _evidence_recall(q, result.memory_snapshot_final)
             if self.progress:
@@ -191,7 +233,10 @@ class LoCoMoDriver:
                     "category": q.category,
                     "evidence": q.evidence,
                     "f1": f1,
-                    "correct": correct,
+                    "bleu1": bleu,
+                    "rougeL": rouge,
+                    "judge_correct": correct,
+                    "correct": correct,  # backwards-compat alias
                     "evidence_recall": evidence_recall,
                 }
             )

@@ -285,8 +285,8 @@ def make_locomo_qa_responder(
       * JsonStore / fallback: full snapshot in LoCoMo session-marker
         format.
 
-    Cognee's GRAPH_COMPLETION already returns a complete answer, so
-    the driver bypasses this responder for that backend.
+    Backends that produce an answer themselves (mode=``answer``)
+    bypass this responder entirely.
     """
 
     def responder(question, context_text: str) -> str:

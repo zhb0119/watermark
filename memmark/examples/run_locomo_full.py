@@ -8,7 +8,7 @@ Two LLM modes (the diff that turns this from a smoke into a paper run):
                                 这是"图里那 9 步"真实路径,跑 paper 用这个.
 
 Backends:
-  --backend json|amem|cognee|graphiti
+  --backend json|amem|graphiti
 
 Example (paper-quality 1 cell):
 
@@ -63,7 +63,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--backend",
-        choices=("json", "cognee", "amem", "graphiti"),
+        choices=("json", "amem", "graphiti"),
         default="json",
     )
     parser.add_argument(
@@ -231,10 +231,6 @@ def _build_backend(name: str):
         from memmark.backends import load_amem
 
         return load_amem()
-    if name == "cognee":
-        from memmark.backends import load_cognee
-
-        return load_cognee()
     if name == "graphiti":
         from memmark.backends import load_graphiti
 

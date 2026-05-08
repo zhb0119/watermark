@@ -20,14 +20,14 @@ class MemoryBackendAdapter(ABC):
         Driver dispatches on this to feed the backend in the way its
         upstream paper / repo uses for LoCoMo / LongMemEval:
           - "turn":    one memory event per LoCoMo turn  (Graphiti)
-          - "session": one memory event per LoCoMo session text  (Cognee)
+          - "session": one memory event per LoCoMo session text
           - "fact":    LoCoMo-style per-session LLM fact extraction
                        with dia_id evidence   (A-MEM, Mem0)
 
     Optional sampler attachment:
       * attach_sampler(sampler)  — wrap the backend's *internal* LLM
         client with the watermark sampler. Backends that drive their
-        own evolution via LLM (A-MEM, Cognee, Graphiti) override this
+        own evolution via LLM (A-MEM, Graphiti) override this
         to install :class:`memmark.llm.watermarked.WatermarkedSampler`
         at the SDK's LLM-call boundary. JsonStore is a no-op.
     """
@@ -58,13 +58,13 @@ class MemoryBackendAdapter(ABC):
           * ``"context"`` — pre-rendered memory text. The driver wraps
             it in LoCoMo's QA_PROMPT and asks our own LLM.
           * ``"answer"``  — the system already produced the answer
-            (e.g. Cognee GRAPH_COMPLETION). The driver returns it
+            itself. The driver returns it
             verbatim, skipping the QA prompt.
 
         Default: render the entire snapshot via session-marker
         grouping (matching LoCoMo's full-conversation Base/Observation
         rendering). Backends with a native canonical retrieve API
-        (A-MEM ``find_related_memories``, Cognee ``search``, Graphiti
+        (A-MEM ``find_related_memories``, Graphiti
         ``search``) override this so QA sees memory in the shape the
         upstream system intends.
         """

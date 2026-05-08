@@ -21,12 +21,6 @@ def load_amem(**kwargs):
     return AMemBackend(**kwargs)
 
 
-def load_cognee(**kwargs):
-    from memmark.backends.cognee_store import CogneeBackend
-
-    return CogneeBackend(**kwargs)
-
-
 def load_graphiti(**kwargs):
     from memmark.backends.graphiti_store import GraphitiBackend
 

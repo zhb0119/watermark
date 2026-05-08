@@ -1,25 +1,22 @@
 """Native LLM-level watermark hook.
 
-Each memory system (A-MEM / Cognee / Graphiti) drives its own
+Each memory system (A-MEM / Graphiti) drives its own
 state-evolution decisions through *its own* internal LLM calls.
 Instead of synthesizing parallel candidates outside the system, we
 intercept those internal calls: sample n alternatives and keyed-pick
 one. Bits are embedded directly in the LLM outputs the SDK consumes,
 so the watermark lives in the system's actual evolution decisions.
 
-Three hooks, one shared core:
+Two hooks, one shared core:
 
   * :class:`WatermarkedSampler`     — keyed-sample + audit + Merkle log.
   * :class:`WatermarkedAMemController` — drop-in for A-mem's
                                           ``LLMController`` (sync,
                                           ``get_completion`` interface).
-  * :class:`WatermarkedGraphitiClient` — subclass of Graphiti's
-                                          ``LLMClient`` ABC (async,
-                                          ``_generate_response`` returns
-                                          ``dict``).
-  * :func:`install_cognee_watermark` — monkey-patch
-                                       ``LLMGateway.acreate_structured_output``
-                                       (Cognee uses a static gateway).
+  * :func:`make_watermarked_graphiti_client` — subclasses Graphiti's
+                                                ``LLMClient`` ABC (async,
+                                                ``_generate_response``
+                                                returns ``dict``).
 
 There is no ``MemMark`` LLM running outside the system; the watermark
 runs *as* the system's LLM.
@@ -27,10 +24,9 @@ runs *as* the system's LLM.
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from memmark.core.commitment import make_commitment
 from memmark.core.context import derive_nonce, sha256_text
@@ -416,120 +412,8 @@ def make_watermarked_graphiti_client(sampler: WatermarkedSampler, underlying: An
     return WatermarkedGraphitiClient(sampler, underlying)
 
 
-# --------------------------------------------------------------- #
-# Cognee adapter — monkey-patch LLMGateway
-# --------------------------------------------------------------- #
-
-
-_COGNEE_PATCH_INSTALLED: Dict[int, Any] = {}
-
-
-def install_cognee_watermark(sampler: WatermarkedSampler) -> None:
-    """Replace ``LLMGateway.acreate_structured_output`` with a
-    watermark-intercepting version.
-
-    Cognee uses a static :class:`LLMGateway` for all structured-output
-    calls (entity extraction, summarization, etc.). One monkey-patch
-    catches every internal LLM call.
-
-    The original is stored on the patched function so
-    :func:`uninstall_cognee_watermark` can restore.
-    """
-
-    try:
-        from cognee.infrastructure.llm.LLMGateway import LLMGateway  # type: ignore
-        from pydantic import BaseModel
-    except ModuleNotFoundError as exc:
-        raise RuntimeError(
-            "cognee is required for the Cognee backend. `pip install cognee` first."
-        ) from exc
-
-    sampler_id = id(sampler)
-    if sampler_id in _COGNEE_PATCH_INSTALLED:
-        return  # already installed
-
-    original = LLMGateway.acreate_structured_output
-    _COGNEE_PATCH_INSTALLED[sampler_id] = original
-
-    @staticmethod  # type: ignore[misc]
-    async def watermarked_acreate(
-        text_input: str,
-        system_prompt: str,
-        response_model: Any,
-        **kwargs: Any,
-    ) -> Any:
-        # Sample n candidates by repeating the underlying call.
-        # Cognee's internal call is async; gather to overlap latency.
-        async def _one():
-            try:
-                return await original(
-                    text_input=text_input,
-                    system_prompt=system_prompt,
-                    response_model=response_model,
-                    **kwargs,
-                )
-            except Exception:
-                return None
-
-        gathered = await asyncio.gather(
-            *[_one() for _ in range(sampler.n_candidates)]
-        )
-        results = [r for r in gathered if r is not None]
-        if not results:
-            return await original(
-                text_input=text_input,
-                system_prompt=system_prompt,
-                response_model=response_model,
-                **kwargs,
-            )
-
-        # Canonicalize each result for clustering.
-        candidates: List[str] = []
-        for r in results:
-            if isinstance(r, BaseModel):
-                candidates.append(r.model_dump_json())
-            else:
-                candidates.append(json.dumps(r, sort_keys=True, ensure_ascii=False, default=str))
-
-        ctx_text = (system_prompt or "") + "\n" + (text_input or "")
-        selected_text = sampler.intercept(
-            candidates, ctx_text=ctx_text, prompt_name="cognee"
-        )
-
-        # Reconstruct the original return type so downstream Cognee
-        # code doesn't see a string where it expected a BaseModel.
-        if isinstance(response_model, type) and issubclass(response_model, BaseModel):
-            try:
-                return response_model.model_validate_json(selected_text)
-            except Exception:
-                return results[0]
-        try:
-            return json.loads(selected_text)
-        except (json.JSONDecodeError, TypeError):
-            return results[0]
-
-    LLMGateway.acreate_structured_output = watermarked_acreate
-
-
-def uninstall_cognee_watermark(sampler: WatermarkedSampler) -> None:
-    """Restore the original ``LLMGateway.acreate_structured_output``."""
-
-    sampler_id = id(sampler)
-    original = _COGNEE_PATCH_INSTALLED.pop(sampler_id, None)
-    if original is None:
-        return
-    try:
-        from cognee.infrastructure.llm.LLMGateway import LLMGateway  # type: ignore
-
-        LLMGateway.acreate_structured_output = original
-    except ModuleNotFoundError:
-        pass
-
-
 __all__ = [
     "WatermarkedSampler",
     "WatermarkedAMemController",
     "make_watermarked_graphiti_client",
-    "install_cognee_watermark",
-    "uninstall_cognee_watermark",
 ]

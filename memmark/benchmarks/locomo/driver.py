@@ -6,12 +6,13 @@ its upstream LoCoMo / LongMemEval official protocol):
   - "turn"    : per-turn episode with session date_time
                 Graphiti  (graphiti/tests/evals/eval_e2e_graph_building.py)
                 JsonStore (smoke default)
-  - "session" : full session text as one document
-                Cognee    (cognee/eval_framework benchmark adapters)
   - "fact"    : LoCoMo-official `CONVERSATION2FACTS_PROMPT` per
                 session → N facts each with dia_id evidence
                 A-MEM     (Mem0-style fact extraction; agentic_memory
                           paper protocol)
+
+  ("session" mode is still implemented for completeness but no
+  current backend uses it.)
 
 The driver reads `backend.preferred_ingestion_mode` and dispatches
 automatically, so each backend gets the input format its upstream
@@ -211,7 +212,7 @@ class LoCoMoDriver:
             #   mode=context  → the backend gives back rendered memory
             #                   text; we wrap it in LoCoMo's QA prompt.
             #   mode=answer   → the backend already produced the answer
-            #                   (Cognee GRAPH_COMPLETION); we use it.
+            #                   itself; we use it verbatim.
             ctx = self.wm.backend.qa_context(q.question, k=10)
             if ctx.get("mode") == "answer":
                 answer = (ctx.get("text") or "").strip()
@@ -283,7 +284,7 @@ class LoCoMoDriver:
         result: "LoCoMoDriverResult",
         recent_dialog_ids: List[str],
     ) -> None:
-        """Document-level ingestion (Cognee default).
+        """Document-level ingestion (one filtered session = one doc).
 
         The whole filtered session is concatenated and pushed as one
         document; cognify() / its native pipeline does the entity /
@@ -530,7 +531,7 @@ def _format_turn(turn: LoCoMoTurn, session_date_time: str = "") -> str:
 def _format_session_text(
     session: LoCoMoSession, turns: List[LoCoMoTurn]
 ) -> str:
-    """Render a session as one document for Cognee's add()."""
+    """Render a session as one document for session-mode ingestion."""
 
     lines = []
     if session.date_time:

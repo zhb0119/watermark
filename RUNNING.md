@@ -192,95 +192,11 @@ done
 
 ---
 
-## 3. Backend B:Cognee(异步 KG,用 SQLite + 本地 vec)
-
-Cognee 默认用 SQLite (relational) + LanceDB (vector) + NetworkX (graph),**不需要 Neo4j**。
-
-### 3.1 安装
-
-```bash
-git clone https://github.com/topoteretes/cognee.git ../cognee
-cd ../cognee
-pip install -e .
-
-# Cognee 自己的 LLM key(可与 MemMark 共用)
-cp .env.example .env
-# 编辑 .env,把 LLM_API_KEY=<你的 key> 填进去
-# 同时记得设 LLM_PROVIDER (openai / openrouter / etc)
-
-cd -
-```
-
-### 3.2 跑 smoke
-
-```bash
-# Cognee 把每条 memory 当一个 dataset 条目;给个隔离的 dataset 名
-export MEMMARK_COGNEE_DATASET="memmark_smoke_$(date +%s)"
-
-python -m memmark.examples.run_locomo_full \
-    --locomo "$MEMMARK_LOCOMO_PATH" \
-    --conversation 0 \
-    --max-sessions 1 \
-    --max-qa 5 \
-    --backend cognee \
-    --llm-mode real --async-assess \
-    --baselines watermark \
-    --output ./results/cognee_smoke.json
-```
-
-> **慢:** Cognee 的 `cognify()` 会跑 KG 抽取(LLM call × 多个 task),smoke 也得 5–15 分钟。先跑 1 session 验通,再扩大。
-
-### 3.3 把 cognify 关掉省时间(只测 add → search 路径)
-
-如果只是想跑通 watermark + audit,不需要让 KG 真的构建:
-
-```python
-# 在 examples/run_locomo_full.py 里把
-load_cognee()
-# 改成
-load_cognee(run_cognify=False)
-```
-
-或直接用环境变量:
-
-```bash
-export MEMMARK_COGNEE_RUN_COGNIFY=false   # (需要在 cognee_store.py 里读这个 env;暂不支持,见下)
-```
-
-(目前 `run_cognify` 是构造参数,不读 env;改 `examples/run_locomo_full.py` 里的 `_build_backend("cognee")` 把 `run_cognify=False` 传进去即可。)
-
-### 3.4 跑全 10 段对话
-
-```bash
-mkdir -p ./results/cognee
-for i in $(seq 0 9); do
-    export MEMMARK_COGNEE_DATASET="memmark_conv${i}_$(date +%s)"
-    python -m memmark.examples.run_locomo_full \
-        --locomo "$MEMMARK_LOCOMO_PATH" \
-        --conversation $i \
-        --backend cognee \
-        --llm-mode real --async-assess \
-        --baselines watermark no_watermark signed_metadata_only \
-        --output ./results/cognee/conv${i}.json
-done
-```
-
-### 3.5 常见报错
-
-| 报错 | 处理 |
-|------|------|
-| `RuntimeError: cognee not installed` | `cd ../cognee && pip install -e .` |
-| `DatabaseNotCreatedError` | 第一次 add 之前,Cognee 会自动建库;若被中断,删 `~/.cognee` 重跑 |
-| `LLM_API_KEY not set` | Cognee 自己的 env,**和 `MEMMARK_API_KEY` 不互通**,要在 `cognee/.env` 里单独填 |
-| 跑很慢 | 把 `--max-sessions` 调小,或在 Cognee `.env` 里把 `EMBEDDING_PROVIDER` 改成本地模型 |
-
----
-
-## 4. Backend C:Graphiti(temporal graph,需要 Neo4j)
+## 3. Backend B:Graphiti(temporal graph,需要 Neo4j)
 
 Graphiti 必须有 Neo4j 5.x。本机起一个 docker 即可。
 
-### 4.1 起 Neo4j
+### 3.1 起 Neo4j
 
 ```bash
 docker run -d --name memmark-neo4j \
@@ -294,7 +210,7 @@ docker run -d --name memmark-neo4j \
 docker logs memmark-neo4j --tail 30 | grep -i 'started\|bolt'
 ```
 
-### 4.2 安装 Graphiti
+### 3.2 安装 Graphiti
 
 ```bash
 git clone https://github.com/getzep/graphiti.git ../graphiti
@@ -304,7 +220,7 @@ pip install -e .
 cd -
 ```
 
-### 4.3 设环境变量
+### 3.3 设环境变量
 
 ```bash
 export NEO4J_URI="bolt://localhost:7687"
@@ -317,7 +233,7 @@ export OPENAI_API_KEY="<你的 OpenAI key>"
 export OPENAI_MODEL="gpt-4o-mini"   # 默认就够用
 ```
 
-### 4.4 跑 smoke
+### 3.4 跑 smoke
 
 ```bash
 python -m memmark.examples.run_locomo_full \
@@ -331,7 +247,7 @@ python -m memmark.examples.run_locomo_full \
     --output ./results/graphiti_smoke.json
 ```
 
-### 4.5 跑全 10 段对话
+### 3.5 跑全 10 段对话
 
 ```bash
 mkdir -p ./results/graphiti
@@ -347,14 +263,14 @@ for i in $(seq 0 9); do
 done
 ```
 
-### 4.6 清空 Neo4j(每次实验前)
+### 3.6 清空 Neo4j(每次实验前)
 
 ```bash
 docker exec memmark-neo4j cypher-shell -u neo4j -p memmark-neo4j-pass \
     "MATCH (n) DETACH DELETE n"
 ```
 
-### 4.7 常见报错
+### 3.7 常见报错
 
 | 报错 | 处理 |
 |------|------|
@@ -377,7 +293,7 @@ docker exec memmark-neo4j cypher-shell -u neo4j -p memmark-neo4j-pass \
 ```bash
 mkdir -p ./results/grid_fast
 
-for backend in json amem cognee graphiti; do
+for backend in json amem graphiti; do
     for i in $(seq 0 4); do                # 前 5 段
         out=./results/grid_fast/${backend}_conv${i}.json
         [ -f $out ] && { echo "skip $out"; continue; }
@@ -395,12 +311,11 @@ done
 ```
 
 Fast 预算(单 cell ~ 30 QA × 3 sessions ≈ ~110 LLM 调用):
-- json:< 5 min(无外部 LLM,候选枚举走 fallback)
+- json:< 5 min(无内部 LLM,水印结构上无 bits 嵌入,纯管线 baseline)
 - A-MEM:~10 min(本地 embedding + LLM 评估)
-- Cognee:~30–60 min(`cognify()` 跑 KG 抽取)
 - Graphiti:~20–40 min(LLM 抽 entity / edge)
 
-5 conv × 4 backend = 20 cell;一晚跑完,**API 成本 ≈ $5–8**(DeepSeek)。
+5 conv × 3 backend = 15 cell;一晚跑完,**API 成本 ≈ $4–6**(DeepSeek)。
 
 ### 5.2 Full LoCoMo grid(paper main table;10 conv × 全 sessions × 全 QA + real mode)
 
@@ -409,7 +324,7 @@ Fast 预算(单 cell ~ 30 QA × 3 sessions ≈ ~110 LLM 调用):
 ```bash
 mkdir -p ./results/grid_full
 
-for backend in json amem cognee graphiti; do
+for backend in json amem graphiti; do
     for i in $(seq 0 9); do                # 全 10 段
         out=./results/grid_full/${backend}_conv${i}.json
         [ -f $out ] && { echo "skip $out"; continue; }
@@ -430,17 +345,16 @@ Full 预算(单 cell 全量 ≈ 199 QA × ~27 sessions ≈ ~680 LLM 调用):
 |---------|------------------|-------------------------|
 | json | ~10 min | ~7 hr 串行 / ~1–2 hr 并发 |
 | A-MEM | ~30 min | ~20 hr 串行 / ~4 hr 并发 |
-| Cognee | ~1–4 hr | ~40–160 hr 串行 / **多日** |
 | Graphiti | ~1–3 hr | ~40–120 hr 串行 / **多日** |
 
-总成本(40 cell × ~680 LLM 调用 ≈ 27k 调用 × DeepSeek $0.0002/call ≈ **$5/backend**):
+总成本(30 cell × ~680 LLM 调用 ≈ 20k 调用 × DeepSeek $0.0002/call):
 
 | LLM | 全 grid API 成本 |
 |-----|---------------|
-| DeepSeek-Chat | ~$25 |
-| GPT-4o-mini | ~$16 |
-| GPT-4o | ~$270 |
-| 自部署 Qwen3.5-397B | GPU-hr 替代 API,~3000 GPU-hr |
+| DeepSeek-Chat | ~$18 |
+| GPT-4o-mini | ~$12 |
+| GPT-4o | ~$200 |
+| 自部署 Qwen3.5-397B | GPU-hr 替代 API,~2200 GPU-hr |
 
 并发跑法(每段 conv 一进程):
 
@@ -458,7 +372,7 @@ parallel -j 4 \
     ::: $(seq 0 9) ::: json amem
 ```
 
-> Cognee / Graphiti **不要并发**(共享 SQLite / Neo4j 实例会锁死),按 backend 串行跑。
+> Graphiti **不要并发**(共享 Neo4j 实例会锁死),按 backend 串行跑。
 
 ### 5.3 子集策略(中间档)
 
@@ -570,7 +484,7 @@ print(run_rq3_in_record(driver_result=result, secret_key="my-key"))
 | 跑 watermark vs metadata-only(headline ablation) | `--baselines watermark signed_metadata_only` |
 | 跑攻击鲁棒性 | 默认就跑了 RQ4(9 attack × 3 strength),看 `rq4_robustness` |
 | 跑 utility delta + LoCoMo F1(Table 1) | `--llm-mode real --baselines watermark no_watermark` |
-| 用真实 backend 替代 json | `--backend amem` / `--backend cognee` / `--backend graphiti` |
+| 用真实 backend 替代 json | `--backend amem` / `--backend graphiti` |
 | 跨 LLM ablation | 改 `MEMMARK_MODEL`,重跑同一段 conv;`watermark_version` 字段会自动区分 |
 | 换 secret key 测 wrong-key 攻击 | 在 `experiments/rq3_in_record.py` 里改 `wrong_key=` |
 | 看 Merkle anchor 是否签得对 | 结果里 `r3.anchor_signature_valid == 1.0` |
@@ -583,7 +497,7 @@ print(run_rq3_in_record(driver_result=result, secret_key="my-key"))
 
 ```bash
 # 仅作 sanity:每个 backend 跑 1 conv × 1 session × 5 QA × watermark only(stub)
-for b in json amem cognee graphiti; do
+for b in json amem graphiti; do
     echo "=== $b ==="
     python -m memmark.examples.run_locomo_full \
         --locomo "$MEMMARK_LOCOMO_PATH" \
@@ -696,7 +610,7 @@ parallel -j 4 \
     ::: $(seq 0 9) ::: json amem
 ```
 
-> Cognee 与 Graphiti **不要** parallel —— Cognee 的 SQLite + LanceDB 锁文件 / Graphiti 的 Neo4j session 都不耐多进程并发。这两个 backend 单进程串行。
+> Graphiti **不要** parallel —— Neo4j session 不耐多进程并发,单进程串行跑。
 
 ### 11.5 缓存 prompt → response(~2× 加速重跑)
 
@@ -733,4 +647,4 @@ class CachedClient:
 
 ---
 
-跑通 §1 + §2 之后(JsonMemoryStore + A-MEM),你已经有头条 RQ3 的真实数字。Cognee + Graphiti 是验证 backend 不变性(B4 simplicity check)和 KG 攻击(KGMark baseline)用的,可以晚一点接。
+跑通 §1 + §2 之后(JsonMemoryStore + A-MEM),你已经有头条 RQ3 的真实数字。Graphiti 是验证 backend 不变性(B4 simplicity check)和 KG 攻击(KGMark baseline)用的,可以晚一点接。

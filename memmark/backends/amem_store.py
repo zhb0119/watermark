@@ -91,7 +91,14 @@ class AMemBackend(MemoryBackendAdapter):
             if speaker:
                 tags = list(dict.fromkeys(tags + [f"speaker:{speaker}"]))
             session_date_time = operation.get("session_date_time", "")
-            note_id = self.system.add_note(text, tags=tags)
+            # A-mem's add_note(content, time=...) stuffs `time` into the
+            # MemoryNote.timestamp field, which is then surfaced by
+            # find_related_memories as `talk start time:<value>`. Pass
+            # LoCoMo's session_date_time so QA-time retrieval sees the
+            # canonical talk-time anchor (matches A-mem's intended usage).
+            note_id = self.system.add_note(
+                text, time=session_date_time or None, tags=tags
+            )
             self._evidence[note_id] = {
                 "dia_ids": evidence,
                 "session_index": session_index,
@@ -129,6 +136,25 @@ class AMemBackend(MemoryBackendAdapter):
 
     def search(self, query: str, k: int = 5) -> List[Dict[str, Any]]:
         return list(self.system.search(query, k=k))
+
+    # ----- canonical QA context ----- #
+    def qa_context(self, question: str, k: int = 10) -> Dict[str, Any]:
+        """A-mem's canonical QA path: feed the formatted string from
+        ``find_related_memories(query, k)`` directly into the prompt.
+
+        The returned string is the same shape A-mem's evolution prompt
+        sees (``memory_id:X\\ttalk start time:Y\\tmemory content:Z\\t...``),
+        i.e. the format A-mem itself uses to render notes for an LLM.
+        """
+
+        if not self.system.memories:
+            return {"mode": "context", "text": "(no long-term memory available)"}
+        try:
+            related_str, _ids = self.system.find_related_memories(question, k=k)
+        except Exception:
+            return {"mode": "context", "text": "(retrieval error)"}
+        text = related_str or "(no related memories found)"
+        return {"mode": "context", "text": text}
 
     # ----- backend-aware carrier candidates ----- #
     def candidate_update_targets(self, text: str, k: int = 5):

@@ -81,6 +81,20 @@ class GraphitiBackend(MemoryBackendAdapter):
             text = operation["text"]
             session_date_time = operation.get("session_date_time", "")
             ref_time = _parse_reference_time(session_date_time) or datetime.now(timezone.utc)
+            # Per podcast_runner.py canonical pattern: chain new
+            # episodes to the most recent 3 by reference_time so
+            # Graphiti can do temporal supersession against the right
+            # fact set. We pull the chain from Graphiti itself rather
+            # than from `_memories`, because the graph may have
+            # invalidated / re-attached uuids during cognify.
+            previous_uuids: List[str] = []
+            try:
+                prev = await self.graphiti.retrieve_episodes(
+                    ref_time, 3, group_ids=[self.group_id]
+                )
+                previous_uuids = [getattr(p, "uuid", "") for p in prev if getattr(p, "uuid", None)]
+            except Exception:
+                previous_uuids = []
             results = await self.graphiti.add_episode(
                 name=operation.get("name", f"memmark_{len(self._memories) + 1}"),
                 episode_body=text,
@@ -88,6 +102,7 @@ class GraphitiBackend(MemoryBackendAdapter):
                 reference_time=ref_time,
                 source=EpisodeType.message if EpisodeType is not None else None,
                 group_id=self.group_id,
+                previous_episode_uuids=previous_uuids or None,
             )
             ep_uuid = getattr(getattr(results, "episode", None), "uuid", None) or (
                 results.episode.uuid if hasattr(results, "episode") else f"g{len(self._memories) + 1}"
@@ -158,10 +173,46 @@ class GraphitiBackend(MemoryBackendAdapter):
         return _string_topk(self._memories, text, k)
 
     async def search_async(self, query: str, top_k: int = 5):
-        return await self.graphiti.search(query=query, num_results=top_k)
+        return await self.graphiti.search(
+            query=query, group_ids=[self.group_id], num_results=top_k
+        )
 
     def search(self, query: str, top_k: int = 5):
         return _run_async(self.search_async(query, top_k=top_k))
+
+    # ----- canonical QA context ----- #
+    def qa_context(self, question: str, k: int = 10) -> Dict[str, Any]:
+        """Graphiti's canonical QA path: ``client.search(query, group_ids,
+        num_results=k)`` returns top-k edges; each ``EntityEdge.fact`` is
+        the natural-language fact string Graphiti emits. We render those
+        as the QA context (LoCoMo paper's +Observation row uses an
+        analogous fact-list rendering).
+        """
+
+        try:
+            edges = _run_async(self.search_async(question, top_k=k))
+        except Exception:
+            from memmark.benchmarks.locomo.qa_eval import _default_render_memory
+
+            return {
+                "mode": "context",
+                "text": _default_render_memory(self.snapshot()),
+            }
+
+        if not edges:
+            return {"mode": "context", "text": "(no related facts in graph)"}
+        lines: List[str] = []
+        for edge in edges:
+            fact = getattr(edge, "fact", "") or ""
+            name = getattr(edge, "name", "") or ""
+            ts = getattr(edge, "valid_at", None) or getattr(
+                edge, "created_at", None
+            )
+            ts_str = ts.isoformat() if ts is not None and hasattr(ts, "isoformat") else ""
+            head = f"[{name}] " if name else ""
+            tail = f" ({ts_str})" if ts_str else ""
+            lines.append(f"- {head}{fact}{tail}")
+        return {"mode": "context", "text": "\n".join(lines)}
 
 
 def _run_async(coro):

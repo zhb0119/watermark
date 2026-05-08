@@ -273,20 +273,24 @@ def make_llm_judge(llm_client):
 def make_locomo_qa_responder(
     llm_client,
     *,
-    memory_render: Optional[Any] = None,
     max_chars: int = 12000,
 ):
-    """Returns a `qa_responder(question, snapshot) -> str` closure.
+    """Returns a `qa_responder(question, context_text) -> str` closure.
 
-    The responder builds a CONV_START_PROMPT-styled context out of the
-    memory snapshot (one record per line) plus LoCoMo's QA_PROMPT or
-    QA_PROMPT_CAT_5 (for adversarial questions, category 5).
+    `context_text` is the pre-rendered memory context produced by the
+    backend's canonical retrieval API (``backend.qa_context(question)``):
+
+      * A-mem: ``find_related_memories(q, k)`` formatted string.
+      * Graphiti: ``client.search(q, group_ids).fact`` list.
+      * JsonStore / fallback: full snapshot in LoCoMo session-marker
+        format.
+
+    Cognee's GRAPH_COMPLETION already returns a complete answer, so
+    the driver bypasses this responder for that backend.
     """
 
-    render = memory_render or _default_render_memory
-
-    def responder(question, snapshot) -> str:
-        ctx = render(snapshot)[:max_chars]
+    def responder(question, context_text: str) -> str:
+        ctx = (context_text or "")[:max_chars]
         if question.category == 5:
             qa_template = QA_PROMPT_CAT_5
         else:

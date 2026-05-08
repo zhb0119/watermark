@@ -46,7 +46,9 @@ from memmark.sdk.memory_watermarker import EvolveResult, MemoryWatermarker
 
 TurnFilter = Callable[[LoCoMoTurn, str], bool]
 QAJudge = Callable[[LoCoMoQuestion, str], bool]
-QAResponder = Callable[[LoCoMoQuestion, List[Dict[str, Any]]], str]
+# qa_responder takes the question + a pre-rendered memory context
+# string (produced by `backend.qa_context(question)`).
+QAResponder = Callable[[LoCoMoQuestion, str], str]
 
 
 @dataclass
@@ -186,7 +188,17 @@ class LoCoMoDriver:
         if self.max_qa is not None:
             qa_list = qa_list[: self.max_qa]
         for q in qa_list:
-            answer = self.qa_responder(q, result.memory_snapshot_final)
+            # Canonical alignment: each backend has a per-question
+            # retrieve API. `qa_context` returns either:
+            #   mode=context  → the backend gives back rendered memory
+            #                   text; we wrap it in LoCoMo's QA prompt.
+            #   mode=answer   → the backend already produced the answer
+            #                   (Cognee GRAPH_COMPLETION); we use it.
+            ctx = self.wm.backend.qa_context(q.question, k=10)
+            if ctx.get("mode") == "answer":
+                answer = (ctx.get("text") or "").strip()
+            else:
+                answer = self.qa_responder(q, ctx.get("text") or "")
             f1 = score_one(answer, q.answer, q.category)
             bleu = bleu1(answer, q.answer)
             rouge = rouge_l(answer, q.answer)
@@ -505,26 +517,30 @@ def _keep_all_substantive_turns(turn: LoCoMoTurn, session_summary: str) -> bool:
 
 
 def _default_qa_responder(
-    question: LoCoMoQuestion, memory_snapshot: List[Dict[str, Any]]
+    question: LoCoMoQuestion, context_text: str
 ) -> str:
     """Substring lookup; only used when LLM responder isn't wired.
     Real runs should use `make_locomo_qa_responder(llm_client)` from
     qa_eval.py.
+
+    `context_text` is whatever the backend's `qa_context` returned
+    (canonical retrieval rendering).
     """
 
     keywords = [w for w in question.question.lower().split() if len(w) > 3]
-    best = ""
-    for record in memory_snapshot:
-        text = record.get("text", "") or ""
-        if not text:
-            continue
-        score = sum(1 for kw in keywords if kw in text.lower())
-        if score and (
-            not best
-            or score > sum(1 for kw in keywords if kw in best.lower())
-        ):
-            best = text
-    return best
+    if not keywords:
+        return ""
+    # Cheap match: pick the line in the rendered context with the
+    # most keyword hits.
+    best_line = ""
+    best_score = 0
+    for line in (context_text or "").splitlines():
+        line_lower = line.lower()
+        score = sum(1 for kw in keywords if kw in line_lower)
+        if score > best_score:
+            best_score = score
+            best_line = line
+    return best_line
 
 
 def _default_qa_judge(question: LoCoMoQuestion, answer: str) -> bool:

@@ -149,6 +149,49 @@ class CogneeBackend(MemoryBackendAdapter):
     def search(self, query: str, top_k: int = 5) -> List[Any]:
         return _run_async(self.search_async(query, top_k=top_k))
 
+    # ----- canonical QA context ----- #
+    def qa_context(self, question: str, k: int = 10) -> Dict[str, Any]:
+        """Cognee's canonical QA path: ``cognee.search(GRAPH_COMPLETION)``
+        already returns the LLM-completed answer using the knowledge
+        graph as context. We surface mode=``answer`` so the driver
+        skips its own QA prompt.
+
+        Falls back to mode=``context`` rendering if the search fails or
+        returns nothing usable.
+        """
+
+        try:
+            results = _run_async(self.search_async(question, top_k=k))
+        except Exception:
+            from memmark.benchmarks.locomo.qa_eval import _default_render_memory
+
+            return {
+                "mode": "context",
+                "text": _default_render_memory(self.snapshot()),
+            }
+
+        # Cognee's GRAPH_COMPLETION returns List[SearchResult] where
+        # each .search_result is the LLM answer (string) or a list of
+        # strings depending on the retriever. Take the first non-empty.
+        text = ""
+        if isinstance(results, list):
+            for item in results:
+                payload = getattr(item, "search_result", item)
+                if isinstance(payload, list):
+                    payload = next(
+                        (str(p) for p in payload if str(p).strip()), ""
+                    )
+                payload = str(payload or "").strip()
+                if payload:
+                    text = payload
+                    break
+        elif isinstance(results, str):
+            text = results.strip()
+
+        if not text:
+            return {"mode": "context", "text": "(no graph-completion result)"}
+        return {"mode": "answer", "text": text}
+
 
 def _run_async(coro):
     try:

@@ -74,6 +74,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--secret-key",
         default=os.getenv("MEMMARK_KEY", "memmark-default-dev-key"),
     )
+    parser.add_argument("--amem-model-name", default="all-MiniLM-L6-v2")
     parser.add_argument("--output", default="memmark_locomo_results.json")
     parser.add_argument(
         "--llm-mode",
@@ -116,7 +117,7 @@ def main() -> None:
 
     runs = {}
     for label in args.baselines:
-        backend = _build_backend(args.backend)
+        backend = _build_backend(args.backend, args.amem_model_name)
         carrier_planner = planner_factory() if planner_factory else None
         wm = build_baseline(
             label,
@@ -379,13 +380,13 @@ def _parse_json_obj(raw: str) -> dict:
         return {}
 
 
-def _build_backend(name: str):
+def _build_backend(name: str, amem_model_name: str):
     if name == "json":
         return JsonMemoryStore()
     if name == "amem":
         from memmark.backends import load_amem
 
-        return load_amem()
+        return load_amem(model_name=amem_model_name)
     if name == "cognee":
         from memmark.backends import load_cognee
 

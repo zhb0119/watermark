@@ -77,6 +77,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--secret-key",
         default=os.getenv("MEMMARK_KEY", "memmark-default-dev-key"),
     )
+    parser.add_argument("--amem-model-name", default="all-MiniLM-L6-v2")
     parser.add_argument("--output", default="memmark_locomo_results.json")
     parser.add_argument(
         "--llm-mode",
@@ -97,6 +98,7 @@ def build_parser() -> argparse.ArgumentParser:
             "via AsyncOpenAIChatClient. ~2x speedup."
         ),
     )
+    parser.add_argument("--progress", action="store_true")
     return parser
 
 
@@ -121,7 +123,7 @@ def main() -> None:
 
     runs = {}
     for label in args.baselines:
-        backend = _build_backend(args.backend)
+        backend = _build_backend(args.backend, args.amem_model_name)
         carrier_planner = (
             planner_factory(backend) if planner_factory else None
         )
@@ -141,6 +143,7 @@ def main() -> None:
             qa_judge=qa_judge,
             max_sessions=args.max_sessions,
             max_qa=args.max_qa,
+            progress=args.progress,
         )
         result = driver.run(conv)
         runs[label] = result
@@ -181,6 +184,8 @@ def main() -> None:
 
     rq5 = {label: run_rq5_integrity(r) for label, r in runs.items()}
 
+    details = {label: _run_details(r) for label, r in runs.items()}
+
     out: Dict[str, Any] = {
         "config": vars(args),
         "conversation": {
@@ -193,6 +198,7 @@ def main() -> None:
         "rq3_in_record": {k: _to_jsonable(v) for k, v in rq3.items()},
         "rq4_robustness": {k: _to_jsonable(v) for k, v in rq4.items()},
         "rq5_integrity": {k: _to_jsonable(v) for k, v in rq5.items()},
+        "details": details,
     }
     Path(args.output).write_text(
         json.dumps(out, indent=2, ensure_ascii=False), encoding="utf-8"
@@ -247,13 +253,13 @@ def _build_llm_layer(mode: str, *, async_assess: bool):
     return llm_client, planner_factory, qa_responder, qa_judge
 
 
-def _build_backend(name: str):
+def _build_backend(name: str, amem_model_name: str):
     if name == "json":
         return JsonMemoryStore()
     if name == "amem":
         from memmark.backends import load_amem
 
-        return load_amem()
+        return load_amem(model_name=amem_model_name)
     if name == "cognee":
         from memmark.backends import load_cognee
 
@@ -263,6 +269,27 @@ def _build_backend(name: str):
 
         return load_graphiti()
     raise ValueError(f"Unknown backend: {name}")
+
+
+def _run_details(result) -> Dict[str, Any]:
+    return _to_jsonable(
+        {
+            "summary": {
+                "decisions": len(result.audits),
+                "bits_embedded": result.bits_embedded_total,
+                "qa_count": len(result.qa_predictions),
+                "qa_accuracy": result.qa_accuracy,
+                "qa_f1_mean": result.qa_f1_mean,
+                "memory_count": len(result.memory_snapshot_final),
+            },
+            "qa_predictions": result.qa_predictions,
+            "memory_snapshot_final": result.memory_snapshot_final,
+            "extracted_events": result.extracted_events,
+            "decisions": result.decisions,
+            "audits": result.audits,
+            "anchor": result.anchor,
+        }
+    )
 
 
 def _to_jsonable(obj: Any) -> Any:

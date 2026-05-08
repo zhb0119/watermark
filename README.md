@@ -11,11 +11,13 @@
 
 ### 1.2 当 Memory 离开它被生成的系统
 
-正因为 memory 又是 agent 最有价值、又是最可移植的一层,它也是最容易脱离原生系统的一层。导出一份 A-MEM 的 note 数据库,或者把 Graphiti 的 temporal graph dump 出来,在工程上几乎没有摩擦。这就引出一个在传统 agent 框架下很少被认真问过的问题:
+正因为 memory 又是 agent 最有价值、又是最可移植的一层,它也是最容易脱离原生系统的一层。导出一份 A-MEM 的 note 数据库,或者把 Graphiti 的 temporal graph dump 出来,在工程上几乎没有摩擦。
+
+这一点带来直接的现实代价。memory 一旦失去出处,IP 索赔无据可查,投毒事故责任主体追不回,受监管部署里 "这份 memory 由某个合规系统演化得到" 也无法独立验证。这就引出一个在传统 agent 框架下很少被认真问过的问题:
 
 > 当一份长期记忆出现在我面前,我能不能证明它是被某一个特定 agent 系统演化出来的?
 
-这个问题在当前的工程实践下基本无法回答。memory system 自身的 changelog (A-MEM 的 evolve 历史、Graphiti 的 fact invalidation 链) 只能告诉我们 "某次写入发生过",但任何拥有数据库写权限的人都可以静默改写它,而且这些 changelog 在 memory 被复制 / 二次封装出去之后几乎一定会被剥掉。常规审计日志同样只证明事件发生,不证明事件来自哪个带私钥的系统。
+这个问题在当前的工程实践下基本无法回答。memory system 自身的 changelog (A-MEM 的 evolve 历史、Graphiti 的 fact invalidation 链) 只能告诉我们 "某次写入发生过",而它们与 memory 数据本身存于同一个图 / 向量库,既无 cryptographic integrity,也不与外部 audit 服务联动 —— 在默认部署形态下,持有 DB 写权限即可静默改写。更关键的是,这些 changelog 在 memory 被复制 / 二次封装出去之后一定会被剥掉。常规审计日志同样只证明事件发生,不证明事件来自哪个带私钥的系统。
 
 存在一类做 LLM 输出层水印的工作 (token-level watermark),也存在一类做 agent 可见行为水印的工作 (在 tool call / planning 决策上嵌 watermark),但它们都依赖一个在我们这个场景里几乎一定会失效的前提:验证时拿得到原始的可见输出或 action trajectory。问题在于,memory 大多数的演化根本不发生在可见输出上 —— 哪条 note 被更新、新事实链接到哪个已有 entity、同一事件被写成哪个等价表述,这些决策完全发生在 agent 的内部状态里;而当 memory 被外泄或迁移之后,可见 trajectory 一定先于 memory 被丢弃。
 

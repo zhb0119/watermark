@@ -12,6 +12,7 @@ class MemoryEvent:
     dia_ids: tuple = ()  # source LoCoMo dialogue ids ("D1:3" etc.)
     session_index: Optional[int] = None
     speaker: str = ""
+    session_date_time: str = ""
 
 
 @dataclass(frozen=True)

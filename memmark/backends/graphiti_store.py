@@ -30,7 +30,17 @@ except ModuleNotFoundError:  # pragma: no cover - optional dependency
 
 
 class GraphitiBackend(MemoryBackendAdapter):
-    """Backend adapter wrapping `graphiti_core.Graphiti`."""
+    """Backend adapter wrapping `graphiti_core.Graphiti`.
+
+    Per Graphiti's official eval (`tests/evals/eval_e2e_graph_building.py`),
+    the LongMemEval / LoCoMo ingestion is **per-turn**: each
+    dialog turn becomes one episode whose `reference_time` is the
+    session's date_time (not now()). We therefore set
+    `preferred_ingestion_mode = "turn"` and read
+    `operation["session_date_time"]` to populate `reference_time`.
+    """
+
+    preferred_ingestion_mode = "turn"
 
     def __init__(
         self,
@@ -69,12 +79,13 @@ class GraphitiBackend(MemoryBackendAdapter):
         speaker = operation.get("speaker", "")
         if op == "add_memory":
             text = operation["text"]
-            now = datetime.now(timezone.utc)
+            session_date_time = operation.get("session_date_time", "")
+            ref_time = _parse_reference_time(session_date_time) or datetime.now(timezone.utc)
             results = await self.graphiti.add_episode(
                 name=operation.get("name", f"memmark_{len(self._memories) + 1}"),
                 episode_body=text,
                 source_description=self.source_description,
-                reference_time=now,
+                reference_time=ref_time,
                 source=EpisodeType.message if EpisodeType is not None else None,
                 group_id=self.group_id,
             )
@@ -85,10 +96,11 @@ class GraphitiBackend(MemoryBackendAdapter):
                 "id": ep_uuid,
                 "text": text,
                 "links": list(operation.get("links", [])),
-                "reference_time": now.isoformat(),
+                "reference_time": ref_time.isoformat(),
                 "dia_ids": evidence,
                 "session_index": session_index,
                 "speaker": speaker,
+                "session_date_time": session_date_time,
             }
             self._memories.append(record)
             return record
@@ -160,3 +172,30 @@ def _run_async(coro):
     except RuntimeError:
         pass
     return asyncio.run(coro)
+
+
+def _parse_reference_time(text: str):
+    """Parse LoCoMo / LongMemEval session date_time string to UTC datetime.
+
+    LoCoMo format examples:  '7 May 2023, 11:38 am', 'May 8, 2023 at 09:00'
+    LongMemEval format:      '2023/05/07 (Sun) 11:38'
+    Falls back to None on unrecognized format.
+    """
+
+    if not text:
+        return None
+    candidates = [
+        "%d %B %Y, %I:%M %p",       # "7 May 2023, 11:38 am"
+        "%B %d, %Y at %H:%M",        # "May 8, 2023 at 09:00"
+        "%B %d, %Y, %I:%M %p",       # "May 8, 2023, 9:00 am"
+        "%Y/%m/%d (%a) %H:%M",       # "2023/05/07 (Sun) 11:38"
+        "%Y-%m-%d %H:%M:%S",         # ISO-ish
+        "%Y-%m-%dT%H:%M:%S",
+    ]
+    for fmt in candidates:
+        try:
+            dt = datetime.strptime(text.strip(), fmt)
+            return dt.replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+    return None

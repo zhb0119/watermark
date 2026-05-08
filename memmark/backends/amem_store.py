@@ -25,7 +25,16 @@ except ModuleNotFoundError:  # pragma: no cover - optional dependency
 
 
 class AMemBackend(MemoryBackendAdapter):
-    """Backend adapter for the A-MEM (agentic memory) SDK."""
+    """Backend adapter for the A-MEM (agentic memory) SDK.
+
+    Per A-MEM upstream paper (`WujiangXu/AgenticMemory`) + Mem0's
+    LoCoMo blog: A-MEM expects pre-extracted, fact-shaped notes
+    (one durable observation per `add_note`). The driver therefore
+    runs LoCoMo's `CONVERSATION2FACTS_PROMPT` per session and feeds
+    the resulting facts (each with dia_id evidence) into A-MEM.
+    """
+
+    preferred_ingestion_mode = "fact"
 
     def __init__(
         self,
@@ -81,11 +90,13 @@ class AMemBackend(MemoryBackendAdapter):
             tags = list(operation.get("tags", []))
             if speaker:
                 tags = list(dict.fromkeys(tags + [f"speaker:{speaker}"]))
+            session_date_time = operation.get("session_date_time", "")
             note_id = self.system.add_note(text, tags=tags)
             self._evidence[note_id] = {
                 "dia_ids": evidence,
                 "session_index": session_index,
                 "speaker": speaker,
+                "session_date_time": session_date_time,
             }
             return self._fetch_record(note_id)
         if op == "update_memory":
@@ -156,23 +167,21 @@ class AMemBackend(MemoryBackendAdapter):
     def _fetch_record(self, note_id: str) -> Dict[str, Any]:
         note = self.system.memories.get(note_id)
         meta = self._evidence.get(note_id, {})
-        if note is None:
-            return {
-                "id": note_id,
-                "text": "",
-                "links": [],
-                "dia_ids": list(meta.get("dia_ids", [])),
-                "session_index": meta.get("session_index"),
-                "speaker": meta.get("speaker", ""),
-            }
-        return {
+        base = {
             "id": note_id,
-            "text": getattr(note, "content", ""),
-            "context": getattr(note, "context", ""),
-            "keywords": list(getattr(note, "keywords", []) or []),
-            "tags": list(getattr(note, "tags", []) or []),
-            "links": list(getattr(note, "links", []) or []),
+            "text": getattr(note, "content", "") if note else "",
+            "links": list(getattr(note, "links", []) or []) if note else [],
             "dia_ids": list(meta.get("dia_ids", [])),
             "session_index": meta.get("session_index"),
             "speaker": meta.get("speaker", ""),
+            "session_date_time": meta.get("session_date_time", ""),
         }
+        if note is not None:
+            base.update(
+                {
+                    "context": getattr(note, "context", ""),
+                    "keywords": list(getattr(note, "keywords", []) or []),
+                    "tags": list(getattr(note, "tags", []) or []),
+                }
+            )
+        return base

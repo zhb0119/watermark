@@ -30,7 +30,7 @@ import re
 from typing import Any, Dict, List, Tuple
 
 from memmark.core.commitment import make_commitment
-from memmark.core.context import derive_nonce, sha256_text
+from memmark.core.context import derive_nonce
 from memmark.core.merkle_log import SessionMerkleLog
 from memmark.core.sampler import sample_memory_transition
 from memmark.core.types import Candidate, DecisionPoint, SessionHeader
@@ -230,8 +230,13 @@ class WatermarkedSampler:
             "prompt": ctx_text,
             "prompt_name": prompt_name,
         }
+        # IMPORTANT: store the *serialized* ctx string on the
+        # DecisionPoint, not its hash. The R3 verifier re-derives nonce
+        # via `derive_nonce(K, audit.context)`, which must match the
+        # nonce we used here (`derive_nonce(K, ctx_serialized)`). If we
+        # stored ctx_hash instead, the verifier would HMAC the hash and
+        # produce a different nonce → R3 silently fails.
         ctx_serialized = json.dumps(ctx_payload, sort_keys=True, ensure_ascii=False)
-        ctx_hash = sha256_text(ctx_serialized)
         nonce = derive_nonce(self.secret_key, ctx_serialized)
 
         cands_obj: List[Candidate] = []
@@ -254,7 +259,7 @@ class WatermarkedSampler:
             tau="llm_call",
             candidates=cands_obj,
             probabilities=probs,
-            context=ctx_hash,
+            context=ctx_serialized,
             round_num=self.round_num,
             nonce=nonce,
             watermark_version=self.watermark_version,

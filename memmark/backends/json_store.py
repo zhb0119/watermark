@@ -16,6 +16,11 @@ class JsonMemoryStore(MemoryBackendAdapter):
       - delete_memory
     """
 
+    # Json store is a thin stub — turn-level ingestion is the simplest
+    # default (matches Graphiti's path so smoke results approximate
+    # Graphiti's protocol).
+    preferred_ingestion_mode = "turn"
+
     def __init__(self, path: Optional[str] = None) -> None:
         self.path = Path(path) if path else None
         self._memories: List[Dict[str, Any]] = []
@@ -38,6 +43,7 @@ class JsonMemoryStore(MemoryBackendAdapter):
                 "dia_ids": evidence,
                 "session_index": session_index,
                 "speaker": speaker,
+                "session_date_time": operation.get("session_date_time", ""),
             }
             self._memories.append(memory)
             self._persist()

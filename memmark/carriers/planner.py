@@ -248,6 +248,7 @@ class LLMCarrierPlanner:
                         "dia_ids": list(event.dia_ids),
                         "session_index": event.session_index,
                         "speaker": event.speaker,
+                        "session_date_time": event.session_date_time,
                     },
                     utility_score=1.0,
                 )
@@ -287,6 +288,7 @@ class LLMCarrierPlanner:
                         "dia_ids": list(event.dia_ids),
                         "session_index": event.session_index,
                         "speaker": event.speaker,
+                        "session_date_time": event.session_date_time,
                     },
                     utility_score=1.0,
                 )
@@ -320,6 +322,7 @@ class LLMCarrierPlanner:
                         "dia_ids": list(event.dia_ids),
                         "session_index": event.session_index,
                         "speaker": event.speaker,
+                        "session_date_time": event.session_date_time,
                     },
                     utility_score=1.0,
                 )

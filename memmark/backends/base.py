@@ -11,18 +11,28 @@ class MemoryBackendAdapter(ABC):
       * snapshot()   — list of memory records (dict-shaped)
       * apply(op)    — apply an evolve operation, return the affected
                        memory record. Must propagate any extra keys
-                       like `dia_ids`, `session_index`, `speaker` on
-                       the returned record so RQ5 evidence checks
-                       work.
+                       like `dia_ids`, `session_index`, `speaker`,
+                       `session_date_time` on the returned record so
+                       RQ5 evidence checks work.
 
-    Optional (for backend-aware carriers; planner falls back to LLM
-    paraphrase if these aren't implemented):
+    Optional class attribute:
+      * preferred_ingestion_mode  — "turn" / "session" / "fact"
+        Driver dispatches on this to feed the backend in the way its
+        upstream paper / repo uses for LoCoMo / LongMemEval:
+          - "turn":    one memory event per LoCoMo turn  (Graphiti)
+          - "session": one memory event per LoCoMo session text  (Cognee)
+          - "fact":    LoCoMo-style per-session LLM fact extraction
+                       with dia_id evidence   (A-MEM, Mem0)
+
+    Optional carrier-aware retrieval (planner falls back to keyword
+    overlap if these aren't implemented):
 
       * candidate_update_targets(text, k)
       * candidate_link_targets(text, k)
-      * paraphrase_candidates(text, k)   — only LLM-side; planner
-                                            handles default
     """
+
+    # Driver fallback when a backend doesn't override.
+    preferred_ingestion_mode: str = "turn"
 
     @abstractmethod
     def snapshot(self) -> List[Dict[str, Any]]:

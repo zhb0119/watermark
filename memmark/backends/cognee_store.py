@@ -29,7 +29,16 @@ except ModuleNotFoundError:  # pragma: no cover - optional dependency
 
 
 class CogneeBackend(MemoryBackendAdapter):
-    """Backend adapter wrapping cognee.add / cognee.cognify / cognee.search."""
+    """Backend adapter wrapping cognee.add / cognee.cognify / cognee.search.
+
+    Cognee's LoCoMo / corpus benchmarks (`cognee.eval_framework`) feed
+    *document-level* text to `cognee.add()` and let `cognify()` do
+    its own KG entity / relation extraction. We therefore set
+    `preferred_ingestion_mode = "session"`: one memory event per
+    LoCoMo session, body = full session conversation text.
+    """
+
+    preferred_ingestion_mode = "session"
 
     def __init__(
         self,
@@ -76,6 +85,7 @@ class CogneeBackend(MemoryBackendAdapter):
                 "dia_ids": evidence,
                 "session_index": session_index,
                 "speaker": speaker,
+                "session_date_time": operation.get("session_date_time", ""),
             }
             self._memories.append(record)
             return record

@@ -27,11 +27,17 @@ class JsonMemoryStore(MemoryBackendAdapter):
 
     def apply(self, operation: Dict[str, Any]) -> Dict[str, Any]:
         op = operation.get("op")
+        evidence = list(operation.get("dia_ids", []))
+        session_index = operation.get("session_index")
+        speaker = operation.get("speaker", "")
         if op == "add_memory":
             memory = {
                 "id": f"m{len(self._memories) + 1}",
                 "text": operation["text"],
                 "links": list(operation.get("links", [])),
+                "dia_ids": evidence,
+                "session_index": session_index,
+                "speaker": speaker,
             }
             self._memories.append(memory)
             self._persist()
@@ -45,6 +51,15 @@ class JsonMemoryStore(MemoryBackendAdapter):
                     record["text"] = new_text
                     if "links" in operation:
                         record["links"] = list(operation["links"])
+                    if evidence:
+                        # Accumulate evidence across updates
+                        record["dia_ids"] = list(
+                            dict.fromkeys(list(record.get("dia_ids", [])) + evidence)
+                        )
+                    if session_index is not None:
+                        record["session_index"] = session_index
+                    if speaker:
+                        record["speaker"] = speaker
                     updated = dict(record)
                     break
             self._persist()

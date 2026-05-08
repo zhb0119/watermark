@@ -679,7 +679,7 @@ class LoCoMoDriver:
 def _capacity_stats(
     audits: List[AuditRecord], decisions: List[DecisionPoint]
 ) -> Dict[str, Any]:
-    if not audits:
+    if not audits or not decisions:
         return {
             "decisions": 0,
             "bits_embedded": 0,

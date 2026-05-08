@@ -1,0 +1,132 @@
+"""Graphiti backend adapter (https://github.com/getzep/graphiti).
+
+Graphiti is a temporal context graph: each memory becomes an *episode*
+with a `reference_time`. The graph evolves through fact invalidation
+and supersession. We expose:
+
+  * `add_memory` → graphiti.add_episode()
+  * `update_memory` → adds a new episode that supersedes the prior fact
+    (Graphiti handles this natively when a contradicting fact arrives)
+  * `delete_memory` → graphiti.remove_episode()
+"""
+
+from __future__ import annotations
+
+import asyncio
+import os
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
+
+from memmark.backends.base import MemoryBackendAdapter
+
+try:
+    from graphiti_core import Graphiti  # type: ignore
+    from graphiti_core.nodes import EpisodeType  # type: ignore
+    HAS_GRAPHITI = True
+except ModuleNotFoundError:  # pragma: no cover - optional dependency
+    Graphiti = None  # type: ignore
+    EpisodeType = None  # type: ignore
+    HAS_GRAPHITI = False
+
+
+class GraphitiBackend(MemoryBackendAdapter):
+    """Backend adapter wrapping `graphiti_core.Graphiti`."""
+
+    def __init__(
+        self,
+        *,
+        graphiti: Optional[Any] = None,
+        group_id: Optional[str] = None,
+        source_description: str = "memmark watermark",
+    ) -> None:
+        if graphiti is None:
+            if not HAS_GRAPHITI:
+                raise RuntimeError(
+                    "graphiti_core not installed. `pip install graphiti-core` "
+                    "or pass `graphiti=` explicitly."
+                )
+            graphiti = Graphiti(
+                uri=os.getenv("NEO4J_URI", "bolt://localhost:7687"),
+                user=os.getenv("NEO4J_USER", "neo4j"),
+                password=os.getenv("NEO4J_PASSWORD", "neo4j"),
+            )
+        self.graphiti = graphiti
+        self.group_id = group_id or os.getenv("MEMMARK_GRAPHITI_GROUP", "memmark")
+        self.source_description = source_description
+        self._memories: List[Dict[str, Any]] = []
+
+    # -- MemoryBackendAdapter ------------------------------------- #
+    def snapshot(self) -> List[Dict[str, Any]]:
+        return [dict(m) for m in self._memories]
+
+    def apply(self, operation: Dict[str, Any]) -> Dict[str, Any]:
+        return _run_async(self.apply_async(operation))
+
+    async def apply_async(self, operation: Dict[str, Any]) -> Dict[str, Any]:
+        op = operation.get("op")
+        if op == "add_memory":
+            text = operation["text"]
+            now = datetime.now(timezone.utc)
+            results = await self.graphiti.add_episode(
+                name=operation.get("name", f"memmark_{len(self._memories) + 1}"),
+                episode_body=text,
+                source_description=self.source_description,
+                reference_time=now,
+                source=EpisodeType.message if EpisodeType is not None else None,
+                group_id=self.group_id,
+            )
+            ep_uuid = getattr(getattr(results, "episode", None), "uuid", None) or (
+                results.episode.uuid if hasattr(results, "episode") else f"g{len(self._memories) + 1}"
+            )
+            record = {
+                "id": ep_uuid,
+                "text": text,
+                "links": list(operation.get("links", [])),
+                "reference_time": now.isoformat(),
+            }
+            self._memories.append(record)
+            return record
+        if op == "update_memory":
+            target_id = operation["memory_id"]
+            new_text = operation["text"]
+            now = datetime.now(timezone.utc)
+            results = await self.graphiti.add_episode(
+                name=f"memmark_update_{target_id}",
+                episode_body=new_text,
+                source_description=self.source_description + " (update)",
+                reference_time=now,
+                source=EpisodeType.message if EpisodeType is not None else None,
+                group_id=self.group_id,
+            )
+            ep_uuid = getattr(getattr(results, "episode", None), "uuid", None) or target_id
+            for record in self._memories:
+                if record["id"] == target_id:
+                    record["text"] = new_text
+                    record["last_update_id"] = ep_uuid
+                    break
+            return {"id": target_id, "text": new_text, "supersede_id": ep_uuid}
+        if op == "delete_memory":
+            target_id = operation["memory_id"]
+            try:
+                await self.graphiti.remove_episode(target_id)
+            except Exception:
+                pass
+            self._memories = [m for m in self._memories if m["id"] != target_id]
+            return {"id": target_id, "deleted": True}
+        raise ValueError(f"Unsupported operation: {op}")
+
+    async def search_async(self, query: str, top_k: int = 5):
+        return await self.graphiti.search(query=query, num_results=top_k)
+
+    def search(self, query: str, top_k: int = 5):
+        return _run_async(self.search_async(query, top_k=top_k))
+
+
+def _run_async(coro):
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            return asyncio.ensure_future(coro)
+    except RuntimeError:
+        pass
+    return asyncio.run(coro)

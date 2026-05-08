@@ -67,6 +67,7 @@ class AMemBackend(MemoryBackendAdapter):
     def snapshot(self) -> List[Dict[str, Any]]:
         memories = []
         for note_id, note in self.system.memories.items():
+            meta = self._evidence.get(note_id, {})
             memories.append(
                 {
                     "id": note_id,
@@ -76,6 +77,14 @@ class AMemBackend(MemoryBackendAdapter):
                     "tags": list(getattr(note, "tags", []) or []),
                     "links": list(getattr(note, "links", []) or []),
                     "category": getattr(note, "category", "Uncategorized"),
+                    # Merge in side-channel bookkeeping so RQ5
+                    # evidence_recall + driver QA rendering see the
+                    # LoCoMo-side metadata that A-mem itself doesn't
+                    # store on MemoryNote.
+                    "dia_ids": list(meta.get("dia_ids", []) or []),
+                    "session_index": meta.get("session_index"),
+                    "speaker": meta.get("speaker", ""),
+                    "session_date_time": meta.get("session_date_time", ""),
                 }
             )
         return memories

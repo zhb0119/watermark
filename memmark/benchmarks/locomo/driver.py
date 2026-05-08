@@ -94,6 +94,7 @@ class LoCoMoDriver:
         max_sessions: Optional[int] = None,
         max_qa: Optional[int] = None,
         max_turns_per_session: Optional[int] = None,
+        progress: bool = False,
         # Backwards-compat: accept the deprecated `memory_extractor`
         # kwarg but ignore it (we no longer extract; backends do).
         memory_extractor: Optional[Any] = None,
@@ -105,6 +106,7 @@ class LoCoMoDriver:
         self.max_sessions = max_sessions
         self.max_qa = max_qa
         self.max_turns_per_session = max_turns_per_session
+        self.progress = progress
         # We intentionally ignore memory_extractor — backend is the
         # source of truth for what becomes a memory record.
         self._legacy_extractor_warned = bool(memory_extractor)
@@ -119,15 +121,38 @@ class LoCoMoDriver:
             sessions = sessions[: self.max_sessions]
 
         recent_dialog_ids: List[str] = []
-        for session in sessions:
+        if self.progress:
+            print(
+                f"[locomo] sample={conversation.sample_id} sessions={len(sessions)}",
+                flush=True,
+            )
+        for session_i, session in enumerate(sessions, start=1):
             turns = session.turns
             if self.max_turns_per_session is not None:
                 turns = turns[: self.max_turns_per_session]
-            for turn in turns:
+            if self.progress:
+                print(
+                    f"[session {session_i}/{len(sessions)}] "
+                    f"session_index={session.index} turns={len(turns)}",
+                    flush=True,
+                )
+            for turn_i, turn in enumerate(turns, start=1):
                 if not self.turn_filter(turn, session.summary):
+                    if self.progress:
+                        print(
+                            f"[turn {turn_i}/{len(turns)}] {turn.dia_id} skipped",
+                            flush=True,
+                        )
                     continue
                 recent_dialog_ids = (recent_dialog_ids + [turn.dia_id])[-8:]
                 event_text = _format_turn(turn)
+                if self.progress:
+                    preview = event_text.replace("\n", " ")[:120]
+                    print(
+                        f"[turn {turn_i}/{len(turns)}] {turn.dia_id} "
+                        f"evolve start: {preview}",
+                        flush=True,
+                    )
                 try:
                     evolve_result = self.wm.evolve(
                         event_text,
@@ -138,6 +163,12 @@ class LoCoMoDriver:
                         speaker=turn.speaker,
                     )
                 except ValueError:
+                    if self.progress:
+                        print(
+                            f"[turn {turn_i}/{len(turns)}] {turn.dia_id} "
+                            "acceptance_fail",
+                            flush=True,
+                        )
                     result.extracted_events.append(
                         {
                             "session": session.index,
@@ -151,6 +182,14 @@ class LoCoMoDriver:
                     continue
                 result.decisions.append(evolve_result.decision)
                 result.audits.append(evolve_result.audit)
+                if self.progress:
+                    print(
+                        f"[turn {turn_i}/{len(turns)}] {turn.dia_id} "
+                        f"evolve done tau={evolve_result.audit.tau} "
+                        f"bits={evolve_result.audit.bits_embedded} "
+                        f"selected={evolve_result.audit.selected_candidate_id}",
+                        flush=True,
+                    )
                 result.extracted_events.append(
                     {
                         "session": session.index,
@@ -164,18 +203,35 @@ class LoCoMoDriver:
                     }
                 )
 
+        if self.progress:
+            print("[locomo] sealing session", flush=True)
         result.anchor = self.wm.seal_session()
+        if self.progress:
+            print("[locomo] reading final memory snapshot", flush=True)
         result.memory_snapshot_final = self.wm.backend.snapshot()
         result.capacity_stats = _capacity_stats(result.audits, result.decisions)
 
         qa_list = conversation.qa
         if self.max_qa is not None:
             qa_list = qa_list[: self.max_qa]
-        for q in qa_list:
+        if self.progress:
+            print(f"[qa] questions={len(qa_list)}", flush=True)
+        for qa_i, q in enumerate(qa_list, start=1):
+            if self.progress:
+                print(
+                    f"[qa {qa_i}/{len(qa_list)}] answering: {q.question[:120]}",
+                    flush=True,
+                )
             answer = self.qa_responder(q, result.memory_snapshot_final)
             f1 = score_one(answer, q.answer, q.category)
             correct = bool(self.qa_judge(q, answer))
             evidence_recall = _evidence_recall(q, result.memory_snapshot_final)
+            if self.progress:
+                print(
+                    f"[qa {qa_i}/{len(qa_list)}] done "
+                    f"f1={f1:.3f} correct={correct}",
+                    flush=True,
+                )
             result.qa_predictions.append(
                 {
                     "question": q.question,

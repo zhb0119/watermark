@@ -98,6 +98,7 @@ def build_parser() -> argparse.ArgumentParser:
             "via AsyncOpenAIChatClient. ~2x speedup."
         ),
     )
+    parser.add_argument("--progress", action="store_true")
     return parser
 
 
@@ -142,6 +143,7 @@ def main() -> None:
             qa_judge=qa_judge,
             max_sessions=args.max_sessions,
             max_qa=args.max_qa,
+            progress=args.progress,
         )
         result = driver.run(conv)
         runs[label] = result

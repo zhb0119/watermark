@@ -38,11 +38,8 @@ python -c "from memmark.llm import OpenAIChatClient; c=OpenAIChatClient(); print
 python -m memmark.examples.run_locomo_full `
     --locomo $env:MEMMARK_LOCOMO_PATH `
     --conversation $Conversation `
-    --max-sessions $MaxSessions `
-    --max-qa $MaxQa `
     --backend $Backend `
     --amem-model-name $AMemModelName `
     --llm-mode real `
-    --progress `
-    --baselines watermark no_watermark signed_metadata_only random_replace `
+    --baselines watermark no_watermark signed_metadata_only `
     --output $Output

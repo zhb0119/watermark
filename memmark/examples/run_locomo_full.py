@@ -117,9 +117,6 @@ def main() -> None:
     runs = {}
     for label in args.baselines:
         backend = _build_backend(args.backend, args.amem_model_name)
-        carrier_planner = (
-            planner_factory(backend) if planner_factory else None
-        )
         wm = build_baseline(
             label,
             backend=backend,

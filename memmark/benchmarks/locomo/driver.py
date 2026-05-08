@@ -626,7 +626,7 @@ class LoCoMoDriver:
                 speaker=speaker,
                 session_date_time=session_date_time,
             )
-        except ValueError:
+        except ValueError as exc:
             if self.progress:
                 print(f"[evolve:{label}:fail] reason=acceptance_fail", flush=True)
             result.extracted_events.append(
@@ -641,15 +641,18 @@ class LoCoMoDriver:
             )
             self.wm.clear_event_context()
             return
-        result.decisions.append(evolve_result.decision)
-        result.audits.append(evolve_result.audit)
+        if evolve_result.decision is not None:
+            result.decisions.append(evolve_result.decision)
+        if evolve_result.audit is not None:
+            result.audits.append(evolve_result.audit)
         record = evolve_result.memory_record
+        audit = evolve_result.audit
         if self.progress:
             print(
-                f"[evolve:{label}:done] tau={evolve_result.audit.tau} "
-                f"candidates={len(evolve_result.decision.candidates)} "
-                f"bits={evolve_result.audit.bits_embedded} "
-                f"selected={evolve_result.audit.selected_candidate_id} "
+                f"[evolve:{label}:done] tau={audit.tau if audit else ''} "
+                f"candidates={len(evolve_result.decision.candidates) if evolve_result.decision else 0} "
+                f"bits={audit.bits_embedded if audit else 0} "
+                f"selected={audit.selected_candidate_id if audit else ''} "
                 f"record_id={record.get('id') if isinstance(record, dict) else ''}",
                 flush=True,
             )
@@ -660,8 +663,10 @@ class LoCoMoDriver:
                 "speaker": speaker,
                 "text": event_text,
                 "applied": True,
-                "llm_calls": len(new_audits),
-                "bits_embedded": bits_for_event,
+                "selected": audit.selected_candidate_id if audit else "",
+                "tau": audit.tau if audit else "",
+                "bits_embedded": audit.bits_embedded if audit else 0,
+                "memory_record": record,
             }
         )
 

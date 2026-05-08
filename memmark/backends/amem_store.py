@@ -52,6 +52,7 @@ class AMemBackend(MemoryBackendAdapter):
                 evo_threshold=evo_threshold,
                 api_key=api_key,
             )
+        self._evidence: Dict[str, Dict[str, Any]] = {}
 
     # -- MemoryBackendAdapter ------------------------------------- #
     def snapshot(self) -> List[Dict[str, Any]]:
@@ -72,33 +73,98 @@ class AMemBackend(MemoryBackendAdapter):
 
     def apply(self, operation: Dict[str, Any]) -> Dict[str, Any]:
         op = operation.get("op")
+        evidence = list(operation.get("dia_ids", []))
+        session_index = operation.get("session_index")
+        speaker = operation.get("speaker", "")
         if op == "add_memory":
             text = operation["text"]
-            note_id = self.system.add_note(text)
+            tags = list(operation.get("tags", []))
+            if speaker:
+                tags = list(dict.fromkeys(tags + [f"speaker:{speaker}"]))
+            note_id = self.system.add_note(text, tags=tags)
+            self._evidence[note_id] = {
+                "dia_ids": evidence,
+                "session_index": session_index,
+                "speaker": speaker,
+            }
             return self._fetch_record(note_id)
         if op == "update_memory":
             target_id = operation["memory_id"]
             new_text = operation["text"]
+            old_meta = self._evidence.get(target_id, {})
             try:
                 self.system.delete(target_id)
             except Exception:
                 pass
             note_id = self.system.add_note(new_text)
+            merged_evidence = list(
+                dict.fromkeys(
+                    list(old_meta.get("dia_ids", [])) + evidence
+                )
+            )
+            self._evidence[note_id] = {
+                "dia_ids": merged_evidence,
+                "session_index": session_index or old_meta.get("session_index"),
+                "speaker": speaker or old_meta.get("speaker", ""),
+            }
+            self._evidence.pop(target_id, None)
             return self._fetch_record(note_id)
         if op == "delete_memory":
             target_id = operation["memory_id"]
             ok = bool(self.system.delete(target_id))
+            self._evidence.pop(target_id, None)
             return {"id": target_id, "deleted": ok}
         raise ValueError(f"Unsupported operation: {op}")
 
     def search(self, query: str, k: int = 5) -> List[Dict[str, Any]]:
         return list(self.system.search(query, k=k))
 
+    # ----- backend-aware carrier candidates ----- #
+    def candidate_update_targets(self, text: str, k: int = 5):
+        """Use A-MEM's ChromaDB retrieval to surface plausible update
+        targets — those are the memories whose existing content is
+        closest to the incoming event in embedding space."""
+
+        try:
+            hits = list(self.system.search(text, k=k))
+        except Exception:
+            return []
+        out = []
+        for h in hits:
+            note_id = h.get("id") or h.get("memory_id")
+            if note_id is None:
+                continue
+            out.append(self._fetch_record(str(note_id)))
+        return out
+
+    def candidate_link_targets(self, text: str, k: int = 5):
+        """A-MEM's `find_related_memories` returns top-k semantically
+        related notes — exactly the candidate links."""
+
+        try:
+            related_str, indices = self.system.find_related_memories(text, k=k)
+        except Exception:
+            return self.candidate_update_targets(text, k=k)
+        out: List[Dict[str, Any]] = []
+        for note_id in self.system.memories.keys():
+            if len(out) >= k:
+                break
+            out.append(self._fetch_record(note_id))
+        return out
+
     # -- internals ------------------------------------------------- #
     def _fetch_record(self, note_id: str) -> Dict[str, Any]:
         note = self.system.memories.get(note_id)
+        meta = self._evidence.get(note_id, {})
         if note is None:
-            return {"id": note_id, "text": "", "links": []}
+            return {
+                "id": note_id,
+                "text": "",
+                "links": [],
+                "dia_ids": list(meta.get("dia_ids", [])),
+                "session_index": meta.get("session_index"),
+                "speaker": meta.get("speaker", ""),
+            }
         return {
             "id": note_id,
             "text": getattr(note, "content", ""),
@@ -106,4 +172,7 @@ class AMemBackend(MemoryBackendAdapter):
             "keywords": list(getattr(note, "keywords", []) or []),
             "tags": list(getattr(note, "tags", []) or []),
             "links": list(getattr(note, "links", []) or []),
+            "dia_ids": list(meta.get("dia_ids", [])),
+            "session_index": meta.get("session_index"),
+            "speaker": meta.get("speaker", ""),
         }

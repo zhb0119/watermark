@@ -39,6 +39,12 @@ class RQ5Report:
     contradiction_rate: float = 0.0  # placeholder
     overall_records: int = 0
     by_carrier_counts: Dict[str, int] = field(default_factory=dict)
+    # Evidence-grounded checks (P2 #4): use LoCoMo's `evidence` dia_id
+    # markers to verify that the memory used for QA actually contains
+    # the right source dialogue turns.
+    evidence_recall_mean: float = 0.0
+    evidence_required_qas: int = 0
+    qa_with_full_evidence: int = 0
 
 
 def run_rq5_integrity(driver_result: LoCoMoDriverResult) -> RQ5Report:
@@ -84,6 +90,17 @@ def run_rq5_integrity(driver_result: LoCoMoDriverResult) -> RQ5Report:
         update_correct / update_total if update_total else 0.0
     )
     report.link_target_total = sum(1 for a in driver_result.audits if a.tau == "link_target")
+
+    # ---- evidence-grounded checks (P2 #4) ---- #
+    qa_predictions = driver_result.qa_predictions or []
+    evidence_qas = [q for q in qa_predictions if q.get("evidence")]
+    if evidence_qas:
+        recalls = [float(q.get("evidence_recall", 0.0)) for q in evidence_qas]
+        report.evidence_required_qas = len(evidence_qas)
+        report.evidence_recall_mean = sum(recalls) / len(recalls)
+        report.qa_with_full_evidence = sum(
+            1 for q in evidence_qas if float(q.get("evidence_recall", 0.0)) >= 1.0
+        )
     return report
 
 

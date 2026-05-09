@@ -231,7 +231,18 @@ class LoCoMoDriver:
                 flush=True,
             )
         if self.async_assess and len(qa_list) > 1:
-            result.qa_predictions.extend(self._run_qa_parallel(qa_list, result))
+            try:
+                result.qa_predictions.extend(self._run_qa_parallel(qa_list, result))
+            except Exception as exc:
+                if self.progress:
+                    print(
+                        f"[qa:async:fallback] {type(exc).__name__}: {exc}",
+                        flush=True,
+                    )
+                for qa_i, q in enumerate(qa_list, start=1):
+                    result.qa_predictions.append(
+                        self._run_one_qa(q, qa_i, len(qa_list), result)
+                    )
         else:
             for qa_i, q in enumerate(qa_list, start=1):
                 result.qa_predictions.append(

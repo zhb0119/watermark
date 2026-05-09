@@ -117,7 +117,15 @@ def main() -> None:
     )
 
     runs = {}
-    for label in args.baselines:
+    for run_i, label in enumerate(args.baselines, start=1):
+        if args.progress:
+            print(
+                f"[run:{run_i}/{len(args.baselines)}:start] "
+                f"baseline={label} backend={args.backend} "
+                f"conversation={args.conversation} max_sessions={args.max_sessions} "
+                f"max_qa={args.max_qa}",
+                flush=True,
+            )
         backend = _build_backend(args.backend, args.amem_model_name)
         wm = build_baseline(
             label,
@@ -138,6 +146,10 @@ def main() -> None:
             async_assess=args.async_assess,
             async_max_concurrency=args.async_max_concurrency,
             progress=args.progress,
+            progress_context={
+                "conversation": args.conversation,
+                "baseline": label,
+            },
         )
         result = driver.run(conv)
         runs[label] = result
@@ -149,6 +161,8 @@ def main() -> None:
             f"bleu1={result.qa_bleu1_mean:.3f} "
             f"rougeL={result.qa_rougeL_mean:.3f}"
         )
+        if args.progress:
+            print(f"[run:{run_i}/{len(args.baselines)}:done] baseline={label}", flush=True)
 
     # Lazy-import RQ runners (they pull torch via decoder→AgentMark)
     from memmark.experiments import (

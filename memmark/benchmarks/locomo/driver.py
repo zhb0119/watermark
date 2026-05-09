@@ -25,6 +25,7 @@ LoCoMo-official QA prompt + F1 judge against the final snapshot.
 from __future__ import annotations
 
 import math
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 
@@ -140,6 +141,8 @@ class LoCoMoDriver:
         max_qa: Optional[int] = None,
         max_turns_per_session: Optional[int] = None,
         fact_extractor_llm: Optional[Any] = None,
+        async_assess: bool = False,
+        async_max_concurrency: int = 4,
         progress: bool = False,
         # Backwards-compat: accept the deprecated `memory_extractor`
         # kwarg but ignore it.
@@ -153,6 +156,8 @@ class LoCoMoDriver:
         self.max_qa = max_qa
         self.max_turns_per_session = max_turns_per_session
         self.fact_extractor_llm = fact_extractor_llm
+        self.async_assess = bool(async_assess)
+        self.async_max_concurrency = max(1, int(async_max_concurrency))
         self.progress = progress
         # We intentionally ignore memory_extractor — backend is the
         # source of truth for what becomes a memory record.
@@ -225,18 +230,58 @@ class LoCoMoDriver:
                 f"memory_records={len(result.memory_snapshot_final)}",
                 flush=True,
             )
-        for qa_i, q in enumerate(qa_list, start=1):
-            if self.progress:
-                print(
-                    f"[qa:{qa_i}/{len(qa_list)}:question] "
-                    f"category={q.category} evidence={q.evidence} text={q.question}",
-                    flush=True,
+        if self.async_assess and len(qa_list) > 1:
+            result.qa_predictions.extend(self._run_qa_parallel(qa_list, result))
+        else:
+            for qa_i, q in enumerate(qa_list, start=1):
+                result.qa_predictions.append(
+                    self._run_one_qa(q, qa_i, len(qa_list), result)
                 )
-            # Per-backend canonical retrieval / QA. qa_context returns
-            # either mode=context (rendered memory text — driver wraps
-            # in LoCoMo QA prompt) or mode=answer (backend ran its own
-            # full official QA protocol, e.g. A-mem robust with
-            # cat-aware prompts).
+        if self.progress:
+            print(
+                f"[qa:done] f1_mean={result.qa_f1_mean:.3f} "
+                f"bleu1_mean={result.qa_bleu1_mean:.3f} "
+                f"rougeL_mean={result.qa_rougeL_mean:.3f} "
+                f"judge_acc={result.qa_judge_accuracy:.3f}",
+                flush=True,
+            )
+        return result
+
+    def _run_qa_parallel(
+        self,
+        qa_list: List[LoCoMoQuestion],
+        result: LoCoMoDriverResult,
+    ) -> List[Dict[str, Any]]:
+        workers = min(self.async_max_concurrency, len(qa_list))
+        if self.progress:
+            print(f"[qa:async] workers={workers}", flush=True)
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            futures = [
+                executor.submit(self._run_one_qa, q, qa_i, len(qa_list), result)
+                for qa_i, q in enumerate(qa_list, start=1)
+            ]
+            out = []
+            for future in futures:
+                try:
+                    out.append(future.result())
+                except Exception as exc:
+                    out.append(self._qa_error_record(len(out) + 1, qa_list[len(out)], result, exc))
+            return out
+
+    def _run_one_qa(
+        self,
+        q: LoCoMoQuestion,
+        qa_i: int,
+        qa_count: int,
+        result: LoCoMoDriverResult,
+    ) -> Dict[str, Any]:
+        if self.progress:
+            print(
+                f"[qa:{qa_i}/{qa_count}:question] "
+                f"category={q.category} evidence={q.evidence} text={q.question}",
+                flush=True,
+            )
+        try:
             ctx = self.wm.backend.qa_context(
                 q.question,
                 k=10,
@@ -250,54 +295,75 @@ class LoCoMoDriver:
             else:
                 context_text = ctx.get("text") or ""
                 answer = self.qa_responder(q, context_text)
-                qa_trace = getattr(self.qa_responder, "last_trace", None)
-                if not isinstance(qa_trace, dict):
-                    qa_trace = build_locomo_qa_trace(q, result.memory_snapshot_final)
-            f1 = score_one(answer, q.answer, q.category)
-            bleu = bleu1(answer, q.answer)
-            rouge = rouge_l(answer, q.answer)
-            correct = bool(self.qa_judge(q, answer))
-            evidence_recall = _evidence_recall(q, result.memory_snapshot_final)
-            if self.progress:
-                print(
-                    f"[qa:{qa_i}/{len(qa_list)}:answer] "
-                    f"context_chars={qa_trace.get('context_chars')} answer={answer}",
-                    flush=True,
-                )
-                print(
-                    f"[qa:{qa_i}/{len(qa_list)}:score] "
-                    f"gold={q.answer} f1={f1:.3f} bleu1={bleu:.3f} "
-                    f"rougeL={rouge:.3f} judge_correct={correct} "
-                    f"evidence_recall={evidence_recall:.3f}",
-                    flush=True,
-                )
-            result.qa_predictions.append(
-                {
-                    "index": qa_i,
-                    "question": q.question,
-                    "answer_gold": q.answer,
-                    "answer_pred": answer,
-                    "category": q.category,
-                    "evidence": q.evidence,
-                    "f1": f1,
-                    "bleu1": bleu,
-                    "rougeL": rouge,
-                    "judge_correct": correct,
-                    "correct": correct,  # backwards-compat alias
-                    "evidence_recall": evidence_recall,
-                    "memory_record_count": len(result.memory_snapshot_final),
-                    "qa_trace": qa_trace,
-                }
-            )
+                qa_trace = build_locomo_qa_trace(q, context_text)
+                qa_trace["raw_response"] = answer
+        except Exception as exc:
+            return self._qa_error_record(qa_i, q, result, exc)
+
+        f1 = score_one(answer, q.answer, q.category)
+        bleu = bleu1(answer, q.answer)
+        rouge = rouge_l(answer, q.answer)
+        correct = bool(self.qa_judge(q, answer))
+        evidence_recall = _evidence_recall(q, result.memory_snapshot_final)
         if self.progress:
             print(
-                f"[qa:done] f1_mean={result.qa_f1_mean:.3f} "
-                f"bleu1_mean={result.qa_bleu1_mean:.3f} "
-                f"rougeL_mean={result.qa_rougeL_mean:.3f} "
-                f"judge_acc={result.qa_judge_accuracy:.3f}",
+                f"[qa:{qa_i}/{qa_count}:answer] "
+                f"context_chars={qa_trace.get('context_chars')} answer={answer}",
                 flush=True,
             )
-        return result
+            print(
+                f"[qa:{qa_i}/{qa_count}:score] "
+                f"gold={q.answer} f1={f1:.3f} bleu1={bleu:.3f} "
+                f"rougeL={rouge:.3f} judge_correct={correct} "
+                f"evidence_recall={evidence_recall:.3f}",
+                flush=True,
+            )
+        return {
+            "index": qa_i,
+            "question": q.question,
+            "answer_gold": q.answer,
+            "answer_pred": answer,
+            "category": q.category,
+            "evidence": q.evidence,
+            "f1": f1,
+            "bleu1": bleu,
+            "rougeL": rouge,
+            "judge_correct": correct,
+            "correct": correct,
+            "evidence_recall": evidence_recall,
+            "memory_record_count": len(result.memory_snapshot_final),
+            "qa_trace": qa_trace,
+        }
+
+    def _qa_error_record(
+        self,
+        qa_i: int,
+        q: LoCoMoQuestion,
+        result: LoCoMoDriverResult,
+        exc: Exception,
+    ) -> Dict[str, Any]:
+        qa_trace = {
+            "context": "",
+            "context_chars": 0,
+            "mode": "error",
+            "error": f"{type(exc).__name__}: {exc}",
+        }
+        return {
+            "index": qa_i,
+            "question": q.question,
+            "answer_gold": q.answer,
+            "answer_pred": "",
+            "category": q.category,
+            "evidence": q.evidence,
+            "f1": 0.0,
+            "bleu1": 0.0,
+            "rougeL": 0.0,
+            "judge_correct": False,
+            "correct": False,
+            "evidence_recall": _evidence_recall(q, result.memory_snapshot_final),
+            "memory_record_count": len(result.memory_snapshot_final),
+            "qa_trace": qa_trace,
+        }
 
     def _ingest_turn_mode(
         self,

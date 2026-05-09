@@ -79,6 +79,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--amem-model-name", default="all-MiniLM-L6-v2")
     parser.add_argument("--output", default="memmark_locomo_results.json")
+    parser.add_argument("--async-assess", action="store_true")
+    parser.add_argument("--async-max-concurrency", type=int, default=4)
     parser.add_argument(
         "--llm-mode",
         choices=("stub", "real"),
@@ -133,6 +135,8 @@ def main() -> None:
             max_sessions=args.max_sessions,
             max_qa=args.max_qa,
             fact_extractor_llm=llm_client,
+            async_assess=args.async_assess,
+            async_max_concurrency=args.async_max_concurrency,
             progress=args.progress,
         )
         result = driver.run(conv)

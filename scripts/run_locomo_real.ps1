@@ -7,7 +7,9 @@ param(
     [string]$AMemModelName = "C:\桌面\models\all-MiniLM-L6-v2",
     [string]$Output = ".\results\amem\conv0_real.json",
     [int]$MaxSessions = 5,
-    [int]$MaxQa = 50
+    [int]$MaxQa = 50,
+    [int]$AsyncMaxConcurrency = 4,
+    [switch]$NoAsyncAssess
 )
 
 if (-not $ApiKey) {
@@ -31,16 +33,29 @@ if (-not (Test-Path $env:MEMMARK_LOCOMO_PATH)) {
     throw "LoCoMo file not found: $env:MEMMARK_LOCOMO_PATH"
 }
 
-New-Item -ItemType Directory -Force (Split-Path $Output) | Out-Null
+$OutputDir = Split-Path $Output
+if ($OutputDir) {
+    New-Item -ItemType Directory -Force $OutputDir | Out-Null
+}
 
 python -c "from memmark.llm import OpenAIChatClient; c=OpenAIChatClient(); print(c.model); print(c.complete([{'role':'user','content':'reply only ok'}], temperature=0))"
 
-python -m memmark.examples.run_locomo_full `
-    --locomo $env:MEMMARK_LOCOMO_PATH `
-    --conversation $Conversation `
-    --backend $Backend `
-    --amem-model-name $AMemModelName `
-    --llm-mode real `
-    --progress `
-    --baselines watermark no_watermark signed_metadata_only `
-    --output $Output
+$RunArgs = @(
+    "-m", "memmark.examples.run_locomo_full",
+    "--locomo", $env:MEMMARK_LOCOMO_PATH,
+    "--conversation", $Conversation,
+    "--backend", $Backend,
+    "--amem-model-name", $AMemModelName,
+    "--llm-mode", "real",
+    "--progress",
+    "--baselines", "watermark", "no_watermark", "signed_metadata_only",
+    "--max-sessions", $MaxSessions,
+    "--max-qa", $MaxQa,
+    "--output", $Output
+)
+
+if (-not $NoAsyncAssess) {
+    $RunArgs += @("--async-assess", "--async-max-concurrency", $AsyncMaxConcurrency)
+}
+
+python @RunArgs

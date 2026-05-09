@@ -364,7 +364,7 @@ def make_locomo_qa_responder(
     def responder(question, context_text) -> str:
         trace = build_locomo_qa_trace(
             question,
-            snapshot,
+            context_text,
             max_chars=max_chars,
         )
         setattr(responder, "last_trace", trace)

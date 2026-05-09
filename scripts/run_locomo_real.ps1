@@ -41,5 +41,6 @@ python -m memmark.examples.run_locomo_full `
     --backend $Backend `
     --amem-model-name $AMemModelName `
     --llm-mode real `
+    --progress `
     --baselines watermark no_watermark signed_metadata_only `
     --output $Output

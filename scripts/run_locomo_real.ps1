@@ -22,10 +22,8 @@ if (-not $ApiKey) {
     throw "Set MEMMARK_API_KEY first or pass -ApiKey '<your OpenRouter key>'."
 }
 
-Write-Step "MemMark LoCoMo real run starting"
-Write-Step "Conversation=$Conversation Backend=$Backend Model=$Model"
-Write-Step "MaxSessions=$MaxSessions MaxQa=$MaxQa"
-Write-Step "AsyncAssess=$(-not $NoAsyncAssess) AsyncMaxConcurrency=$AsyncMaxConcurrency"
+Write-Step "MemMark LoCoMo real run"
+Write-Step "conversation=$Conversation backend=$Backend model=$Model sessions=$MaxSessions qa=$MaxQa async=$(-not $NoAsyncAssess)"
 
 $env:MEMMARK_API_KEY = $ApiKey
 $env:MEMMARK_BASE_URL = "https://openrouter.ai/api/v1"
@@ -49,11 +47,9 @@ if ($OutputDir) {
     New-Item -ItemType Directory -Force $OutputDir | Out-Null
 }
 
-Write-Step "Python=python"
-Write-Step "LoCoMo=$env:MEMMARK_LOCOMO_PATH"
-Write-Step "Output=$Output"
-Write-Step "Checking LLM client"
-python -c "from memmark.llm import OpenAIChatClient; c=OpenAIChatClient(); print(c.model); print(c.complete([{'role':'user','content':'reply only ok'}], temperature=0))"
+Write-Step "output=$Output"
+Write-Step "checking LLM client"
+python -c "from memmark.llm import OpenAIChatClient; c=OpenAIChatClient(); c.complete([{'role':'user','content':'reply only ok'}], temperature=0); print('LLM ok:', c.model)"
 if ($LASTEXITCODE -ne 0) {
     throw "LLM client check failed with exit code $LASTEXITCODE"
 }
@@ -76,7 +72,7 @@ if (-not $NoAsyncAssess) {
     $RunArgs += @("--async-assess", "--async-max-concurrency", $AsyncMaxConcurrency)
 }
 
-Write-Step "Command: python $($RunArgs -join ' ')"
+Write-Step "running progress view"
 $started = Get-Date
 python @RunArgs
 $exitCode = $LASTEXITCODE

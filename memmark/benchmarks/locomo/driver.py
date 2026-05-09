@@ -346,7 +346,18 @@ class LoCoMoDriver:
             )
             if ctx.get("mode") == "answer":
                 answer = (ctx.get("text") or "").strip()
-                qa_trace = {"context": "", "context_chars": 0, "mode": "answer"}
+                context_text = ctx.get("context") or ""
+                qa_trace = {
+                    "context": context_text,
+                    "context_chars": len(context_text),
+                    "mode": "answer",
+                    "keywords": ctx.get("keywords", ""),
+                    "keyword_raw": ctx.get("keyword_raw", ""),
+                    "retrieval_error": ctx.get("retrieval_error", ""),
+                    "retrieval_fallback": bool(ctx.get("retrieval_fallback")),
+                    "user_prompt": ctx.get("user_prompt", ""),
+                    "raw_response": answer,
+                }
             else:
                 context_text = ctx.get("text") or ""
                 answer = self.qa_responder(q, context_text)

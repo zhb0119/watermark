@@ -646,7 +646,8 @@ def differential_based_decoder(probabilities, selected_behavior, context_for_key
     try:
         selected_idx = behaviors.index(selected_behavior)
     except ValueError:
-        print(f"Warning: Selected behavior '{selected_behavior}' not in behavior list")
+        if os.getenv("AGENTMARK_DEBUG_SAMPLER"):
+            print(f"Warning: Selected behavior '{selected_behavior}' not in behavior list")
         return ''
     
     prev_tensor = torch.tensor([selected_idx], device=device)
@@ -689,7 +690,8 @@ def differential_based_decoder(probabilities, selected_behavior, context_for_key
         idx_in_bin = (bin_content == prev_tensor.item()).nonzero().item()
     except (RuntimeError, ValueError):
         # If selected behavior not in bin, something went wrong
-        print(f"Warning: Selected behavior not in expected bin, cannot decode")
+        if os.getenv("AGENTMARK_DEBUG_SAMPLER"):
+            print(f"Warning: Selected behavior not in expected bin, cannot decode")
         return ''
     
     # Use cyclic shift decoder to extract bits

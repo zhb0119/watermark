@@ -17,7 +17,7 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, List, Optional
 
-from memmark.backends.base import MemoryBackendAdapter
+from memmark.backends.base import MemoryBackendAdapter, _string_topk
 
 try:  # real A-MEM SDK
     from agentic_memory.memory_system import AgenticMemorySystem  # type: ignore
@@ -162,10 +162,7 @@ class AMemBackend(MemoryBackendAdapter):
             related_str, ids = self.system.find_related_memories(query, k=k)
         except Exception:
             return []
-        out: List[Dict[str, Any]] = []
-        for note_id in ids:
-            out.append(self._fetch_record(str(note_id)))
-        return out
+        return self._records_from_ids(ids)
 
     # ----- watermark sampler injection ----- #
     def attach_sampler(self, sampler: Any) -> None:
@@ -244,12 +241,13 @@ class AMemBackend(MemoryBackendAdapter):
         llm_client: Any,
     ) -> Dict[str, Any]:
         from memmark.benchmarks.locomo.qa_eval import (
+            _default_render_memory,
             build_amem_keyword_prompt,
             build_cat_aware_qa_prompt,
         )
 
-        # Step 1: keyword extraction (test_advanced_robust.py:96-107)
         keywords = question
+        kw_raw = ""
         try:
             kw_raw = llm_client.complete(
                 [{"role": "user", "content": build_amem_keyword_prompt(question)}],
@@ -268,19 +266,27 @@ class AMemBackend(MemoryBackendAdapter):
         except Exception:
             pass
 
-        # Step 2: raw retrieval (prefer find_related_memories_raw, fallback
-        # to formatted find_related_memories on older A-mem SDK builds)
         raw_context = ""
+        retrieval_error = ""
         try:
             if hasattr(self.system, "find_related_memories_raw"):
                 raw_context = self.system.find_related_memories_raw(keywords, k=k)
             else:
                 related_str, _ = self.system.find_related_memories(keywords, k=k)
                 raw_context = related_str or ""
-        except Exception:
+        except Exception as exc:
+            retrieval_error = f"{type(exc).__name__}: {exc}"
             raw_context = ""
 
-        # Step 3: cat-aware prompt + plain-text answer
+        retrieval_fallback = False
+        if not isinstance(raw_context, str):
+            raw_context = str(raw_context or "")
+        if not raw_context.strip():
+            records = _string_topk(self.snapshot(), question, k)
+            if records:
+                raw_context = _default_render_memory(records)
+                retrieval_fallback = True
+
         user_prompt, temperature = build_cat_aware_qa_prompt(
             category, raw_context, question, gold_answer=gold_answer,
         )
@@ -290,7 +296,17 @@ class AMemBackend(MemoryBackendAdapter):
             )
         except Exception:
             answer = ""
-        return {"mode": "answer", "text": (answer or "").strip()}
+        return {
+            "mode": "answer",
+            "text": (answer or "").strip(),
+            "context": raw_context,
+            "context_chars": len(raw_context),
+            "keywords": keywords,
+            "keyword_raw": kw_raw,
+            "retrieval_error": retrieval_error,
+            "retrieval_fallback": retrieval_fallback,
+            "user_prompt": user_prompt,
+        }
 
     # -- internals ------------------------------------------------- #
     def _fetch_record(self, note_id: str) -> Dict[str, Any]:
@@ -314,3 +330,13 @@ class AMemBackend(MemoryBackendAdapter):
                 }
             )
         return base
+
+    def _records_from_ids(self, ids: List[Any]) -> List[Dict[str, Any]]:
+        note_ids = list(self.system.memories.keys())
+        out: List[Dict[str, Any]] = []
+        for item in ids:
+            note_id = str(item)
+            if isinstance(item, int) and 0 <= item < len(note_ids):
+                note_id = note_ids[item]
+            out.append(self._fetch_record(note_id))
+        return out

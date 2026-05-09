@@ -54,6 +54,78 @@ CONV_START_PROMPT = (
 )
 
 
+# ----- A-mem robust cat-aware QA prompt (shared by A-mem + Graphiti) ----- #
+
+def build_cat_aware_qa_prompt(
+    category: int,
+    context: str,
+    question: str,
+    gold_answer: str = None,
+) -> "tuple[str, float]":
+    """Category-specific QA prompt + temperature, verbatim from
+    A-mem ``test_advanced_robust.py:117-144``.
+
+    Both A-mem and Graphiti (after Phase B alignment) call this.
+    LoCoMo questions need the same temporal / abstention handling
+    regardless of which backend retrieves the context.
+
+      cat 2 (temporal)     — explicit "Use DATE of CONVERSATION"
+                              instruction so model doesn't quote
+                              "yesterday" verbatim
+      cat 3 (multi-hop)    — "exact words from context"
+      cat 5 (adversarial)  — A/B select with `Not mentioned in the
+                              conversation` and the gold answer
+                              (gold_answer required)
+      default (1, 4)       — same as cat 3
+    """
+
+    if category == 5 and gold_answer:
+        import random as _rand
+        opts = ["Not mentioned in the conversation", gold_answer]
+        if _rand.random() < 0.5:
+            opts = list(reversed(opts))
+        prompt = (
+            f"Based on the context: {context}, answer the following "
+            f"question. {question}\n\n"
+            f"Select the correct answer: {opts[0]} or {opts[1]}  "
+            f"Short answer:"
+        )
+        return prompt, 0.5
+    if category == 2:
+        prompt = (
+            f"Based on the context: {context}, answer the following "
+            f"question. Use DATE of CONVERSATION to answer with an "
+            f"approximate date.\nPlease generate the shortest possible "
+            f"answer, using words from the conversation where possible, "
+            f"and avoid using any subjects.\n\n"
+            f"Question: {question} Short answer:"
+        )
+        return prompt, 0.7
+    # cat 3, default 1/4
+    prompt = (
+        f"Based on the context: {context}, write an answer in "
+        f"the form of a short phrase for the following question. "
+        f"Answer with exact words from the context whenever possible."
+        f"\n\nQuestion: {question} Short answer:"
+    )
+    return prompt, 0.7
+
+
+def build_amem_keyword_prompt(question: str) -> str:
+    """A-mem ``generate_query_llm`` prompt verbatim
+    (test_advanced_robust.py:96-105)."""
+
+    return (
+        "Given the following question, generate several keywords, using "
+        "'cosmos' as the separator.\n\n"
+        f"Question: {question}\n\n"
+        "Format your response as a JSON object with a \"keywords\" field "
+        "containing the selected text.\n\n"
+        "Example response format:\n"
+        "{\"keywords\": \"keyword1, keyword2, keyword3\"}"
+    )
+
+
 # ----- normalization + F1 (LoCoMo evaluation.py) --------------------- #
 
 try:

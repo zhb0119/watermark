@@ -222,10 +222,18 @@ class LoCoMoDriver:
                     f"category={q.category} evidence={q.evidence} text={q.question}",
                     flush=True,
                 )
-            # Per-backend canonical retrieval: qa_context returns either
-            # mode=context (rendered memory text) or mode=answer (backend
-            # already produced the final answer itself).
-            ctx = self.wm.backend.qa_context(q.question, k=10)
+            # Per-backend canonical retrieval / QA. qa_context returns
+            # either mode=context (rendered memory text — driver wraps
+            # in LoCoMo QA prompt) or mode=answer (backend ran its own
+            # full official QA protocol, e.g. A-mem robust with
+            # cat-aware prompts).
+            ctx = self.wm.backend.qa_context(
+                q.question,
+                k=10,
+                category=q.category,
+                gold_answer=q.answer,
+                llm_client=self.fact_extractor_llm,
+            )
             if ctx.get("mode") == "answer":
                 answer = (ctx.get("text") or "").strip()
                 qa_trace = {"context": "", "context_chars": 0, "mode": "answer"}

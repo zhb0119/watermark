@@ -50,23 +50,39 @@ class MemoryBackendAdapter(ABC):
         return None
 
     # ------------- canonical QA context ------------------ #
-    def qa_context(self, question: str, k: int = 10) -> Dict[str, Any]:
+    def qa_context(
+        self,
+        question: str,
+        k: int = 10,
+        *,
+        category: Any = None,
+        gold_answer: Any = None,
+        llm_client: Any = None,
+    ) -> Dict[str, Any]:
         """Return per-question retrieval context for the QA prompt.
 
         Returns ``{"mode": "context"|"answer", "text": str}``:
 
           * ``"context"`` — pre-rendered memory text. The driver wraps
             it in LoCoMo's QA_PROMPT and asks our own LLM.
-          * ``"answer"``  — the system already produced the answer
-            itself. The driver returns it
-            verbatim, skipping the QA prompt.
+          * ``"answer"``  — the backend ran its native QA pipeline
+            (e.g. A-mem robust protocol with cat-aware prompts). The
+            driver returns the answer verbatim, skipping the QA prompt.
+
+        Optional kwargs (used by backends that implement a full
+        official QA protocol, e.g. A-mem):
+
+          * ``category``     — LoCoMo question category (1..5)
+          * ``gold_answer``  — gold answer (only needed for cat-5
+                               adversarial A/B protocol)
+          * ``llm_client``   — separate raw LLM client (NOT the
+                               watermark-wrapped one) for QA-time
+                               keyword extraction + final answer
 
         Default: render the entire snapshot via session-marker
-        grouping (matching LoCoMo's full-conversation Base/Observation
-        rendering). Backends with a native canonical retrieve API
-        (A-MEM ``find_related_memories``, Graphiti
-        ``search``) override this so QA sees memory in the shape the
-        upstream system intends.
+        grouping (matching LoCoMo's full-conversation
+        Base/Observation rendering). Backends with a native canonical
+        retrieve / QA API override this.
         """
 
         from memmark.benchmarks.locomo.qa_eval import _default_render_memory

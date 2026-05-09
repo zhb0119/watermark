@@ -365,7 +365,6 @@ def make_locomo_qa_responder(
         trace = build_locomo_qa_trace(
             question,
             snapshot,
-            memory_render=render,
             max_chars=max_chars,
         )
         setattr(responder, "last_trace", trace)
@@ -394,13 +393,14 @@ def build_locomo_qa_trace(
     else:
         qa_template = QA_PROMPT
     user_prompt = ctx + qa_template.format(q=question.question)
+    # Match A-mem upstream SYSTEM_MESSAGE (memory_layer_robust.py:76).
+    # Abstention is opt-in via cat-5's A/B prompt only, never via system.
     messages = [
         {
             "role": "system",
             "content": (
-                "You are a careful question-answering assistant. "
-                "Use ONLY the provided memory context. If the answer "
-                "is not in the context, reply: 'No information available'."
+                "Follow the format specified in the prompt exactly. "
+                "Do not add extra commentary."
             ),
         },
         {"role": "user", "content": user_prompt},

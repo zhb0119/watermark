@@ -583,7 +583,7 @@ memmark-v1::qwen3.5-397b-a17b@<weights-hash>::T_score=0.0::T_enum=0.7::json_mode
 
 | 类别 | 指标 |
 |------|------|
-| **Utility** (per-benchmark) | `LoCoMo`: QA accuracy / F1, event summary coverage, evidence-grounded answer quality;`LongMemEval`: question-type accuracy, knowledge-update correctness, temporal reasoning correctness, abstention quality;`MemoryAgentBench`: accurate retrieval (EventQA), test-time learning, long-range understanding, selective forgetting (FactConsolidation), ingest / retrieval / generation latency, token cost |
+| **Utility** (per-benchmark) | `LoCoMo`: **F1 / BLEU-1 / ROUGE-L**(LoCoMo paper Table 4 + A-mem `utils.py:calculate_metrics` 主三列;Porter-stemmed token F1 用 `score_one()`,BLEU-1 用 nltk `sentence_bleu(weights=(1,0,0,0))`,ROUGE-L 用 `rouge_score.RougeScorer`);`LongMemEval`: question-type accuracy, knowledge-update correctness, temporal reasoning correctness, abstention quality;`MemoryAgentBench`: accurate retrieval (EventQA), test-time learning, long-range understanding, selective forgetting (FactConsolidation), ingest / retrieval / generation latency, token cost |
 | **Watermark** | bit recovery rate, decode success rate, false-positive rate (FPR), wrong-key acceptance rate, per-turn / per-session capacity |
 | **Capacity (memory-aware)** | bits per memory decision, bits per session, bits per benchmark episode, 每百轮对话可嵌入 bit 数, 每次 memory write 平均容量 |
 | **Carrier-level breakdown** | 上述所有指标在三类 carrier `update_target / link_target / semantic_realization` 上分别报告 |
@@ -594,9 +594,9 @@ memmark-v1::qwen3.5-397b-a17b@<weights-hash>::T_score=0.0::T_enum=0.7::json_mode
 
 **Question**: watermark 是否破坏 memory system 自身的 utility?这是后续所有 RQ 的成立前提:attribution 不能以 broken memory 为代价。
 
-**Setup**: 三个 benchmark × 两个 LLM × 三个 backend,各跑 `no-watermark` 与 `+ memory-watermark`,比较 §9.2 中 Utility 列的全部指标。
+**Setup**: 三个 benchmark × 两个 LLM × 三个 backend,各跑 `no-watermark` 与 `+ memory-watermark`。LoCoMo 主指标固定为 **F1 / BLEU-1 / ROUGE-L** 三列(LoCoMo paper Table 4 + A-mem `utils.py:calculate_metrics` 对齐);其它 benchmark 的指标见 §9.2。我们刻意不引入 LLM-as-judge:LoCoMo / A-mem 官方均无 LLM judge,deterministic F1 + BLEU + ROUGE 已是上游主表口径。
 
-**Expected outcome**: 在所有 (LLM, backend, benchmark) 组合上,watermark 引入的 utility 下降在统计噪声范围内;retain / recall latency 与 token cost 的相对增幅 ≤ 一个预先声明的阈值(如 5%);memory write 路径无额外失败。
+**Expected outcome**: 在所有 (LLM, backend, benchmark) 组合上,watermark 引入的 F1 / BLEU-1 / ROUGE-L 下降均在统计噪声范围内(per-seed 标准差内);retain / recall latency 与 token cost 的相对增幅 ≤ 一个预先声明的阈值(如 5%);memory write 路径无额外失败。
 
 ### 9.4 RQ2 — Capacity
 

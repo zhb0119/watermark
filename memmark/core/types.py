@@ -65,6 +65,13 @@ class AuditRecord:
     # for in-record verification per README §9.3 / §10.5 R3).
     candidates: Optional[List[Candidate]] = None
     probabilities: Optional[Dict[str, float]] = None
+    # Multi-label carrier support: ``tau`` holds the primary
+    # (first-reported) carrier; ``extra_carriers`` holds any additional
+    # ones the LLM reported for the same call. RQ5 counts the audit in
+    # every carrier bucket in ``[tau, *extra_carriers]`` so mixed-decision
+    # SDK calls (e.g. Graphiti extract_nodes_and_edges = relation choice
+    # + entity attachment) get bucketed correctly.
+    extra_carriers: tuple = ()
 
 
 @dataclass(frozen=True)

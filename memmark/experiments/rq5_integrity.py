@@ -62,16 +62,21 @@ def run_rq5_integrity(driver_result: LoCoMoDriverResult) -> RQ5Report:
     report.duplicate_count = duplicate_count
     report.duplication_rate = duplicate_count / overall
 
-    # Carrier breakdown of decisions
-    by_carrier: Counter = Counter(a.tau for a in driver_result.audits)
+    # Carrier breakdown of decisions — multi-label: count an audit
+    # in every carrier bucket it lists (primary tau + extra_carriers).
+    by_carrier: Counter = Counter()
+    for a in driver_result.audits:
+        for c in _carriers_of(a):
+            by_carrier[c] += 1
     report.by_carrier_counts = dict(by_carrier)
 
     # Update-target accuracy heuristic: did the chosen update target's
-    # original text share keywords with the new event?
+    # original text share keywords with the new event? Count any audit
+    # that lists update_target among its carriers.
     update_total = 0
     update_correct = 0
     for decision, audit in zip(driver_result.decisions, driver_result.audits):
-        if audit.tau != "update_target":
+        if "update_target" not in _carriers_of(audit):
             continue
         update_total += 1
         selected = next(
@@ -89,7 +94,9 @@ def run_rq5_integrity(driver_result: LoCoMoDriverResult) -> RQ5Report:
     report.update_target_accuracy = (
         update_correct / update_total if update_total else 0.0
     )
-    report.link_target_total = sum(1 for a in driver_result.audits if a.tau == "link_target")
+    report.link_target_total = sum(
+        1 for a in driver_result.audits if "link_target" in _carriers_of(a)
+    )
 
     # ---- evidence-grounded checks (P2 #4) ---- #
     qa_predictions = driver_result.qa_predictions or []
@@ -108,3 +115,14 @@ def _shares_keywords(a: str, b: str, *, min_share: int = 1) -> bool:
     a_words = {w for w in a.lower().split() if len(w) > 3}
     b_words = {w for w in b.lower().split() if len(w) > 3}
     return len(a_words & b_words) >= min_share
+
+
+def _carriers_of(audit) -> List[str]:
+    """Return all carrier labels associated with an audit
+    (primary ``tau`` + any ``extra_carriers``)."""
+    out = [audit.tau] if audit.tau else []
+    extras = getattr(audit, "extra_carriers", ()) or ()
+    for c in extras:
+        if c and c not in out:
+            out.append(c)
+    return out

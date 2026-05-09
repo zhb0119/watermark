@@ -30,7 +30,7 @@ token-level LLM 文本水印与 agent 可见行为水印 (在 tool call / planni
 
 我们的回答是把 attribution 嵌到 memory 演化本身的 keyed 决策里 —— 让 attribution **不再是字段,而是行为痕迹**。
 
-每一次 memory 写入,实际上是 agent 在以下三个维度上做选择:
+每一次 memory 写入,实际上是 agent 在若干维度上做选择。本文重点利用其中三类:
 
 - **更新哪一条已有记忆** —— 多条历史 note / fact edge 都可能与新信息相关
 - **链接到哪一个已有对象** —— 新内容可以挂到不同的 entity / cluster / episode
@@ -59,16 +59,11 @@ State-evolution attribution 要在最坏情况下兑现:**memory 已经离开原
 **全程不依赖 memory system 数据库的诚实性,也不依赖任何外部 audit store 的可得性**。即使攻击者能写所有 memory record 的 metadata 字段、抹掉原 changelog,只要他不知道 key,他就(a)无法把伪造 memory 的选择序列匹配到我们的 key,(b)无法在重写 memory 内容后让原 reveal 仍然 keyed-valid。R3 在 §9.5 作为论文核心实验给出,与 ``signed-metadata-only`` baseline 直接对照 —— 后者就是当前 provenance-aware memory 范式 (TierMem / MemOS) 在 R3 下的退化。
 
 ### 1.5 Contributions
+(i) **Cryptographic audit trace for memory evolution.** 我们用 commitment + per-session Merkle log + signed root anchor 替代普通 JSON log,使每次 evolve 决策的归因证据 tamper-evident、partial-verifiable,并将 reveal record 与 memory record 同表落地,以支撑 in-record 验证 (§8)。
 
-(i) **Backend-invariant evolve carrier taxonomy.** 我们把两类结构差别很大的 memory system —— A-MEM 的 agentic notes 网络与 Graphiti 的 temporal graph —— 在 evolve 决策层抽象成同一个三元 carrier taxonomy (update / link / semantic, §3.2),并给出 ~50–100 行 native API wrapper 即可接入的最小 adapter 接口 (§3.2.3),不引入外部 agent harness。
+(ii) **In-Record Attribution Verification.** 我们形式化三档 verification regime (R1 完整外部日志 / R2 部分外部日志 / R3 仅 snapshot),并通过 signed-metadata-only baseline 量化 watermark 相对纯 metadata 在 R3 下提供的边际归因价值 (§9.5)。
 
-(ii) **LLM-call-boundary interception with self-reported candidate weights.** memory SDK 内部的 LLM call 输出是开词表结构化 JSON,没有显式离散候选集。我们在 SDK 内部 LLM client 边界做拦截,把 SDK 原 prompt 后接一段 AgentMark 风格的 instruction,让 LLM 在**单次调用**里枚举 K 个等价候选并自报权重 ``{candidates: [{decision, weight}, ...]}``;wrapper parse 出 (C_t, p_t) 喂给 distribution-preserving binning sampler,按 key 挑一个 ``decision`` 还原成 SDK 原 schema 返回 (§6)。
-
-(iii) **Cryptographic audit trace for memory evolution.** 我们用 commitment + per-session Merkle log + signed root anchor 替代普通 JSON log,使每次 evolve 决策的归因证据 tamper-evident、partial-verifiable,并将 reveal record 与 memory record 同表落地,以支撑 in-record 验证 (§8)。
-
-(iv) **In-Record Attribution Verification.** 我们形式化三档 verification regime (R1 完整外部日志 / R2 部分外部日志 / R3 仅 snapshot),并通过 signed-metadata-only baseline 量化 watermark 相对纯 metadata 在 R3 下提供的边际归因价值 (§9.5)。
-
-(v) **Memory-specific evaluation.** 我们在 LoCoMo / LongMemEval / MemoryAgentBench 三个 benchmark 上,用一套针对 memory lifecycle 的攻击模型 (compaction, dedup, supersession, paraphrase rewrite, pruning, poisoning, manual edits, KG-specific edge relabel / subgraph reanchor) 报告 utility / capacity / robustness / integrity 全套指标 (§9),并在 KG backend 上以 KGMark 为直接 baseline。
+(iii) **Memory-specific evaluation.** 我们在 LoCoMo / LongMemEval / MemoryAgentBench 三个 benchmark 上,用一套针对 memory lifecycle 的攻击模型 (compaction, dedup, supersession, paraphrase rewrite, pruning, poisoning, manual edits, KG-specific edge relabel / subgraph reanchor) 报告 utility / capacity / robustness / integrity 全套指标 (§9),并在 KG backend 上以 KGMark 为直接 baseline。
 
 
 ## 2. 目标场景
@@ -583,7 +578,7 @@ memmark-v1::qwen3.5-397b-a17b@<weights-hash>::T_score=0.0::T_enum=0.7::json_mode
 
 | 类别 | 指标 |
 |------|------|
-| **Utility** (per-benchmark) | `LoCoMo`: QA accuracy / F1, event summary coverage, evidence-grounded answer quality;`LongMemEval`: question-type accuracy, knowledge-update correctness, temporal reasoning correctness, abstention quality;`MemoryAgentBench`: accurate retrieval (EventQA), test-time learning, long-range understanding, selective forgetting (FactConsolidation), ingest / retrieval / generation latency, token cost |
+| **Utility** (per-benchmark) | `LoCoMo`: **F1 / BLEU-1 / ROUGE-L**(LoCoMo paper Table 4 + A-mem `utils.py:calculate_metrics` 主三列;Porter-stemmed token F1 用 `score_one()`,BLEU-1 用 nltk `sentence_bleu(weights=(1,0,0,0))`,ROUGE-L 用 `rouge_score.RougeScorer`);`LongMemEval`: question-type accuracy, knowledge-update correctness, temporal reasoning correctness, abstention quality;`MemoryAgentBench`: accurate retrieval (EventQA), test-time learning, long-range understanding, selective forgetting (FactConsolidation), ingest / retrieval / generation latency, token cost |
 | **Watermark** | bit recovery rate, decode success rate, false-positive rate (FPR), wrong-key acceptance rate, per-turn / per-session capacity |
 | **Capacity (memory-aware)** | bits per memory decision, bits per session, bits per benchmark episode, 每百轮对话可嵌入 bit 数, 每次 memory write 平均容量 |
 | **Carrier-level breakdown** | 上述所有指标在三类 carrier `update_target / link_target / semantic_realization` 上分别报告 |
@@ -594,9 +589,9 @@ memmark-v1::qwen3.5-397b-a17b@<weights-hash>::T_score=0.0::T_enum=0.7::json_mode
 
 **Question**: watermark 是否破坏 memory system 自身的 utility?这是后续所有 RQ 的成立前提:attribution 不能以 broken memory 为代价。
 
-**Setup**: 三个 benchmark × 两个 LLM × 三个 backend,各跑 `no-watermark` 与 `+ memory-watermark`,比较 §9.2 中 Utility 列的全部指标。
+**Setup**: 三个 benchmark × 两个 LLM × 三个 backend,各跑 `no-watermark` 与 `+ memory-watermark`。LoCoMo 主指标固定为 **F1 / BLEU-1 / ROUGE-L** 三列(LoCoMo paper Table 4 + A-mem `utils.py:calculate_metrics` 对齐);其它 benchmark 的指标见 §9.2。我们刻意不引入 LLM-as-judge:LoCoMo / A-mem 官方均无 LLM judge,deterministic F1 + BLEU + ROUGE 已是上游主表口径。
 
-**Expected outcome**: 在所有 (LLM, backend, benchmark) 组合上,watermark 引入的 utility 下降在统计噪声范围内;retain / recall latency 与 token cost 的相对增幅 ≤ 一个预先声明的阈值(如 5%);memory write 路径无额外失败。
+**Expected outcome**: 在所有 (LLM, backend, benchmark) 组合上,watermark 引入的 F1 / BLEU-1 / ROUGE-L 下降均在统计噪声范围内(per-seed 标准差内);retain / recall latency 与 token cost 的相对增幅 ≤ 一个预先声明的阈值(如 5%);memory write 路径无额外失败。
 
 ### 9.4 RQ2 — Capacity
 

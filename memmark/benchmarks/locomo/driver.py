@@ -512,6 +512,10 @@ class LoCoMoDriver:
 
         new_audits = self.wm.audits[before:]
         bits_for_event = sum(a.bits_embedded for a in new_audits)
+        # Pick the last new audit as the representative one to log on the
+        # extracted event (one event can trigger multiple SDK-internal
+        # LLM calls → multiple audits; we summarize via the last one).
+        last_audit = new_audits[-1] if new_audits else None
         if self.progress:
             print(
                 f"[evolve:{label}:done] llm_calls={len(new_audits)} "
@@ -526,9 +530,10 @@ class LoCoMoDriver:
                 "speaker": speaker,
                 "text": event_text,
                 "applied": True,
-                "selected": audit.selected_candidate_id if audit else "",
-                "tau": audit.tau if audit else "",
-                "bits_embedded": audit.bits_embedded if audit else 0,
+                "llm_calls": len(new_audits),
+                "selected": last_audit.selected_candidate_id if last_audit else "",
+                "tau": last_audit.tau if last_audit else "",
+                "bits_embedded": bits_for_event,
                 "memory_record": record,
             }
         )

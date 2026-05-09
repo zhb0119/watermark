@@ -152,7 +152,20 @@ class AMemBackend(MemoryBackendAdapter):
         raise ValueError(f"Unsupported operation: {op}")
 
     def search(self, query: str, k: int = 5) -> List[Dict[str, Any]]:
-        return list(self.system.search(query, k=k))
+        # The agiresearch SDK exposes ``search()``; the WujiangXu eval
+        # repo (current install) only ships ``find_related_memories``.
+        # Prefer search if present, otherwise build dicts from
+        # find_related_memories.
+        if hasattr(self.system, "search"):
+            return list(self.system.search(query, k=k))
+        try:
+            related_str, ids = self.system.find_related_memories(query, k=k)
+        except Exception:
+            return []
+        out: List[Dict[str, Any]] = []
+        for note_id in ids:
+            out.append(self._fetch_record(str(note_id)))
+        return out
 
     # ----- watermark sampler injection ----- #
     def attach_sampler(self, sampler: Any) -> None:

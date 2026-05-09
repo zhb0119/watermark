@@ -179,10 +179,12 @@ class LoCoMoDriver:
             turns = session.turns
             if self.max_turns_per_session is not None:
                 turns = turns[: self.max_turns_per_session]
+            events_before = len(result.extracted_events)
+            audits_before = len(result.audits)
             if self.progress:
                 print(
                     f"[session {session_i}/{len(sessions)}] "
-                    f"session_index={session.index} turns={len(turns)}",
+                    f"session_index={session.index} date={session.date_time} turns={len(turns)}",
                     flush=True,
                 )
             if ingestion_mode == "session":
@@ -196,6 +198,14 @@ class LoCoMoDriver:
             else:
                 self._ingest_turn_mode(
                     conversation, session, turns, result, recent_dialog_ids
+                )
+            if self.progress:
+                print(
+                    f"[session {session_i}/{len(sessions)}:done] "
+                    f"events={len(result.extracted_events) - events_before} "
+                    f"llm_calls={len(result.audits) - audits_before} "
+                    f"recent_dialog_ids={recent_dialog_ids}",
+                    flush=True,
                 )
 
         if self.progress:
@@ -463,16 +473,25 @@ class LoCoMoDriver:
         `reference_time` (matching `eval_e2e_graph_building.py`).
         """
 
-        for turn in turns:
+        total_turns = len(turns)
+        for turn_i, turn in enumerate(turns, start=1):
             if not self.turn_filter(turn, session.summary):
                 if self.progress:
                     print(
-                        f"[turn:skip] session={session.index} dia_id={turn.dia_id}",
+                        f"[turn:{session.index}:{turn_i}/{total_turns}:skip] "
+                        f"dia_id={turn.dia_id} speaker={turn.speaker}",
                         flush=True,
                     )
                 continue
             recent_dialog_ids[:] = (recent_dialog_ids + [turn.dia_id])[-8:]
             event_text = _format_turn(turn, session.date_time)
+            if self.progress:
+                preview = turn.text.replace("\n", " ")[:180]
+                print(
+                    f"[turn:{session.index}:{turn_i}/{total_turns}:ingest] "
+                    f"dia_id={turn.dia_id} speaker={turn.speaker} text={preview}",
+                    flush=True,
+                )
             self._evolve_one(
                 event_text,
                 dia_ids=[turn.dia_id],
@@ -670,11 +689,28 @@ class LoCoMoDriver:
             self.wm.clear_event_context()
 
         new_audits = self.wm.audits[before:]
+        result.audits.extend(new_audits)
+        for audit_record in new_audits:
+            if audit_record.candidates and audit_record.probabilities:
+                result.decisions.append(
+                    DecisionPoint(
+                        decision_id=audit_record.decision_id,
+                        tau=audit_record.tau,
+                        candidates=audit_record.candidates,
+                        probabilities=audit_record.probabilities,
+                        context=audit_record.context,
+                        round_num=audit_record.round_num,
+                        nonce=audit_record.nonce,
+                        watermark_version=audit_record.watermark_version,
+                    )
+                )
+        audit = new_audits[-1] if new_audits else None
         bits_for_event = sum(a.bits_embedded for a in new_audits)
         if self.progress:
             print(
                 f"[evolve:{label}:done] llm_calls={len(new_audits)} "
                 f"bits={bits_for_event} "
+                f"last_tau={audit.tau if audit else ''} "
                 f"record_id={record.get('id') if isinstance(record, dict) else ''}",
                 flush=True,
             )
@@ -814,6 +850,11 @@ def _default_qa_responder(
     (canonical retrieval rendering).
     """
 
+    if isinstance(context_text, list):
+        context_text = "\n".join(
+            str(item.get("text", item)) if isinstance(item, dict) else str(item)
+            for item in context_text
+        )
     keywords = [w for w in question.question.lower().split() if len(w) > 3]
     if not keywords:
         return ""

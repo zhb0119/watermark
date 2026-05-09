@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 from typing import Any, List, Sequence
 
 
@@ -31,7 +32,12 @@ CONVERSATION2FACTS_PROMPT = (
     "objective factual information about the speaker that can be used "
     "as a database about them. Avoid abstract observations about the "
     "dynamics between the two speakers such as 'speaker is supportive', "
-    "'speaker appreciates' etc. Do not leave out any information from "
+    "'speaker appreciates' etc. Exclude greetings, compliments, reactions, "
+    "questions asked, agreement, conversation-management statements, and "
+    "temporary departures unless they encode a durable personal fact. "
+    "Normalize relative dates using the session date: if the conversation "
+    "date is 8 May 2023, 'yesterday' must be written as '7 May 2023 "
+    "(yesterday)'. Do not leave out durable personal information from "
     "the CONVERSATION. "
     "Important: respond with a strict JSON object whose keys are speaker "
     "names and whose values are arrays of [observation_text, dia_id] "
@@ -89,7 +95,16 @@ def extract_session_facts(
         raw = llm_client.complete(messages, temperature=0.0)
     except Exception:
         return []
-    return _parse_facts(raw, valid_speakers={speaker_a, speaker_b})
+    facts = _parse_facts(raw, valid_speakers={speaker_a, speaker_b})
+    normalized = [
+        ExtractedFact(
+            text=_normalize_relative_dates(f.text, session_date_time),
+            dia_ids=f.dia_ids,
+            speaker=f.speaker,
+        )
+        for f in facts
+    ]
+    return [f for f in normalized if _is_durable_fact(f.text)][:max_facts]
 
 
 def _format_conversation(date_time: str, turns: Sequence[Any]) -> str:
@@ -177,3 +192,87 @@ def _normalize_item(item: Any) -> tuple[str, List[str]]:
 
 def _scan_dia_ids(text: str) -> List[str]:
     return _DIA_ID_RE.findall(text or "")
+
+
+_NON_DURABLE_PATTERNS = (
+    r"\basked\b",
+    r"\bpraised\b",
+    r"\bcompliment(?:ed|s)?\b",
+    r"\bappreciates?\b",
+    r"\badmires?\b",
+    r"\bagrees?\b",
+    r"\bthinks? .{0,40}\b(cool|great|nice|awesome|interesting)\b",
+    r"\bfinds? .{0,40}\b(cool|great|nice|awesome|interesting)\b",
+    r"\bis curious about\b",
+    r"\bis off to\b",
+    r"\bis going to do some research\b",
+)
+
+_DURABLE_CUES = (
+    "attended",
+    "went to",
+    "experienced",
+    "felt",
+    "feels",
+    "found",
+    "plans",
+    "interested in",
+    "works",
+    "has",
+    "is swamped",
+    "painted",
+    "likes",
+    "enjoys",
+    "wants",
+    "lives",
+    "studies",
+)
+
+
+def _is_durable_fact(text: str) -> bool:
+    t = (text or "").strip().lower()
+    if not t:
+        return False
+    for pattern in _NON_DURABLE_PATTERNS:
+        if re.search(pattern, t):
+            return False
+    return any(cue in t for cue in _DURABLE_CUES)
+
+
+def _normalize_relative_dates(text: str, session_date_time: str) -> str:
+    base = _parse_session_date(session_date_time)
+    if base is None:
+        return text
+    replacements = {
+        "the day before": base - timedelta(days=1),
+        "yesterday": base - timedelta(days=1),
+        "today": base,
+        "tomorrow": base + timedelta(days=1),
+    }
+    out = text
+    for phrase, dt in replacements.items():
+        pattern = re.compile(rf"\b{re.escape(phrase)}\b", re.IGNORECASE)
+        if pattern.search(out):
+            out = pattern.sub(f"{_format_date(dt)} ({phrase})", out)
+    return out
+
+
+def _parse_session_date(session_date_time: str):
+    match = re.search(
+        r"\b(\d{1,2})\s+([A-Za-z]+),?\s+(\d{4})\b",
+        session_date_time or "",
+    )
+    if not match:
+        return None
+    day, month, year = match.groups()
+    try:
+        return datetime.strptime(f"{day} {month} {year}", "%d %B %Y")
+    except ValueError:
+        try:
+            return datetime.strptime(f"{day} {month} {year}", "%d %b %Y")
+        except ValueError:
+            return None
+
+
+def _format_date(dt: datetime) -> str:
+    return f"{dt.day} {dt.strftime('%B')} {dt.year}"

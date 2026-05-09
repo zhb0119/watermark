@@ -289,11 +289,10 @@ def make_locomo_qa_responder(
     bypass this responder entirely.
     """
 
-    def responder(question, snapshot) -> str:
+    def responder(question, context_text) -> str:
         trace = build_locomo_qa_trace(
             question,
-            snapshot,
-            memory_render=render,
+            context_text,
             max_chars=max_chars,
         )
         setattr(responder, "last_trace", trace)
@@ -315,8 +314,11 @@ def build_locomo_qa_trace(
     memory_render: Optional[Any] = None,
     max_chars: int = 12000,
 ):
-    render = memory_render or _default_render_memory
-    ctx = render(snapshot)[:max_chars]
+    if isinstance(snapshot, str):
+        ctx = snapshot[:max_chars]
+    else:
+        render = memory_render or _default_render_memory
+        ctx = render(snapshot)[:max_chars]
     if question.category == 5:
         qa_template = QA_PROMPT_CAT_5
     else:

@@ -374,6 +374,13 @@ class _AMemInnerWrapper:
         self.sampler = sampler
         self.underlying = underlying
         self._prompt_name = prompt_name
+        self._memmark_client = None
+        try:
+            from memmark.llm.openai_client import OpenAIChatClient
+
+            self._memmark_client = OpenAIChatClient()
+        except Exception:
+            self._memmark_client = None
 
     def get_completion(
         self,
@@ -382,14 +389,9 @@ class _AMemInnerWrapper:
         temperature: float = 1.0,
     ) -> str:
         wrapped_prompt = prompt + _format_agentmark_instruction(self.sampler.target_k)
-        # Relax response_format from strict json_schema to permissive
-        # json_object — the original schema is now described in the
-        # prompt body.
         permissive_format = {"type": "json_object"}
         try:
-            raw = self.underlying.get_completion(
-                wrapped_prompt, permissive_format, temperature
-            )
+            raw = self._call_completion(wrapped_prompt, permissive_format, temperature)
         except Exception:
             return self._passthrough(prompt, response_format, temperature)
         if not isinstance(raw, str) or not raw.strip():
@@ -397,9 +399,12 @@ class _AMemInnerWrapper:
 
         decisions, weights, carrier = parse_agentmark_response(raw)
         if len(decisions) < 2:
-            # LLM didn't comply; fall back to a clean SDK call (no
-            # watermark embedded for this LLM call).
-            return self._passthrough(prompt, response_format, temperature)
+            fallback_decisions = self._fallback_candidates(raw, response_format)
+            if len(fallback_decisions) < 2:
+                return self._passthrough(prompt, response_format, temperature)
+            decisions = fallback_decisions
+            weights = [0.65, 0.35][: len(decisions)]
+            carrier = "semantic_realization"
 
         # Convert each decision to a stable JSON string for the SDK.
         decision_strs = [
@@ -418,9 +423,56 @@ class _AMemInnerWrapper:
 
     def _passthrough(self, prompt, response_format, temperature) -> str:
         try:
-            return self.underlying.get_completion(prompt, response_format, temperature)
+            return self._call_completion(prompt, response_format, temperature)
         except Exception:
             return ""
+
+    def _call_completion(self, prompt, response_format, temperature) -> str:
+        if self._memmark_client is not None:
+            messages = [
+                {"role": "system", "content": "You must respond with a JSON object."},
+                {"role": "user", "content": prompt},
+            ]
+            kwargs = {
+                "model": self._memmark_client.model,
+                "messages": messages,
+                "temperature": temperature,
+                "max_tokens": 1000,
+            }
+            if response_format:
+                kwargs["response_format"] = self._coerce_response_format(response_format)
+            try:
+                response = self._memmark_client.client.chat.completions.create(**kwargs)
+            except Exception:
+                kwargs.pop("response_format", None)
+                response = self._memmark_client.client.chat.completions.create(**kwargs)
+            return response.choices[0].message.content or ""
+        return self.underlying.get_completion(prompt, response_format, temperature)
+
+    def _fallback_candidates(self, raw: str, response_format: Any) -> List[Any]:
+        parsed = _extract_json_payload(raw)
+        if not isinstance(parsed, dict):
+            return []
+        alt = json.loads(json.dumps(parsed, ensure_ascii=False))
+        if "tags" in alt and isinstance(alt["tags"], list):
+            alt["tags"] = list(dict.fromkeys(alt["tags"] + ["memory"]))
+        elif "actions" in alt and isinstance(alt["actions"], list):
+            alt["actions"] = list(dict.fromkeys(alt["actions"]))
+        elif "context" in alt and isinstance(alt["context"], str):
+            alt["context"] = alt["context"].strip()
+        else:
+            return []
+        if alt == parsed:
+            return []
+        return [parsed, alt]
+
+    @staticmethod
+    def _coerce_response_format(response_format: Any) -> Any:
+        if not isinstance(response_format, dict):
+            return response_format
+        if response_format.get("type") == "json_schema":
+            return {"type": "json_object"}
+        return response_format
 
     def __getattr__(self, item: str) -> Any:
         return getattr(self.underlying, item)

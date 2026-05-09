@@ -27,14 +27,15 @@ except ModuleNotFoundError:  # pragma: no cover - optional dependency
 class AMemBackend(MemoryBackendAdapter):
     """Backend adapter for the A-MEM (agentic memory) SDK.
 
-    Per A-MEM upstream paper (`WujiangXu/AgenticMemory`) + Mem0's
-    LoCoMo blog: A-MEM expects pre-extracted, fact-shaped notes
-    (one durable observation per `add_note`). The driver therefore
-    runs LoCoMo's `CONVERSATION2FACTS_PROMPT` per session and feeds
-    the resulting facts (each with dia_id evidence) into A-MEM.
+    Per A-MEM official LoCoMo eval (`A-mem/test_advanced.py:301-305`):
+    A-MEM ingests **turn-by-turn**, not via a separate fact-extraction
+    step. Each LoCoMo turn becomes one ``add_note(text, time)``; A-mem's
+    own internal ``analyze_content`` + ``process_memory`` decide what to
+    keep, link, and evolve. Aligning to this protocol keeps our RQ1
+    utility numbers directly comparable to the A-MEM paper.
     """
 
-    preferred_ingestion_mode = "fact"
+    preferred_ingestion_mode = "turn"
 
     def __init__(
         self,

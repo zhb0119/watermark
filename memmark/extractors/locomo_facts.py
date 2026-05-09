@@ -30,14 +30,21 @@ CONVERSATION2FACTS_PROMPT = (
     "about the speaker, and also include the dialog id of the dialogs "
     "from which the information is taken. The OBSERVATIONS should be "
     "objective factual information about the speaker that can be used "
-    "as a database about them. Avoid abstract observations about the "
-    "dynamics between the two speakers such as 'speaker is supportive', "
-    "'speaker appreciates' etc. Exclude greetings, compliments, reactions, "
-    "questions asked, agreement, conversation-management statements, and "
-    "temporary departures unless they encode a durable personal fact. "
-    "Normalize relative dates using the session date: if the conversation "
-    "date is 8 May 2023, 'yesterday' must be written as '7 May 2023 "
-    "(yesterday)'. Do not leave out durable personal information from "
+    "as a database about them and to answer later questions. Keep both "
+    "stable long-term facts and QA-relevant episodic facts: identity, "
+    "relationship status, family, kids, work, education, career plans, "
+    "hobbies, books, gifts, places, countries, events, activities, trips, "
+    "classes, conferences, races, speeches, camping, museums, birthdays, "
+    "dates, durations, plans, decisions, causes, and preferences. Avoid "
+    "abstract observations about the dynamics between the two speakers "
+    "such as 'speaker is supportive', 'speaker appreciates' etc. Exclude "
+    "greetings, bare compliments, bare reactions, agreement, and "
+    "conversation-management statements unless they contain one of the "
+    "QA-relevant facts above. Normalize relative dates using the session "
+    "date: if the conversation date is 8 May 2023, 'yesterday' must be "
+    "written as '7 May 2023 (yesterday)'. Preserve the original relative "
+    "phrase in parentheses after the absolute date. Do not leave out any "
+    "QA-relevant personal, temporal, location, or event information from "
     "the CONVERSATION. "
     "Important: respond with a strict JSON object whose keys are speaker "
     "names and whose values are arrays of [observation_text, dia_id] "
@@ -205,7 +212,6 @@ _NON_DURABLE_PATTERNS = (
     r"\bfinds? .{0,40}\b(cool|great|nice|awesome|interesting)\b",
     r"\bis curious about\b",
     r"\bis off to\b",
-    r"\bis going to do some research\b",
 )
 
 _DURABLE_CUES = (
@@ -226,6 +232,65 @@ _DURABLE_CUES = (
     "wants",
     "lives",
     "studies",
+    "identity",
+    "transgender",
+    "relationship",
+    "single",
+    "support group",
+    "education",
+    "career",
+    "counseling",
+    "mental health",
+    "research",
+    "adoption",
+    "agency",
+    "agencies",
+    "charity",
+    "race",
+    "camping",
+    "camped",
+    "beach",
+    "mountain",
+    "forest",
+    "museum",
+    "pottery",
+    "class",
+    "running",
+    "destress",
+    "painting",
+    "swimming",
+    "kids",
+    "dinosaurs",
+    "nature",
+    "book",
+    "read",
+    "bookshelf",
+    "collects",
+    "classic",
+    "birthday",
+    "speech",
+    "school",
+    "friends",
+    "family",
+    "mentor",
+    "sweden",
+    "moved",
+    "home country",
+    "necklace",
+    "gift",
+    "grandma",
+    "conference",
+    "picnic",
+    "activity",
+    "activities",
+    "place",
+    "places",
+    "location",
+    "duration",
+    "year",
+    "month",
+    "week",
+    "day",
 )
 
 
@@ -236,24 +301,83 @@ def _is_durable_fact(text: str) -> bool:
     for pattern in _NON_DURABLE_PATTERNS:
         if re.search(pattern, t):
             return False
-    return any(cue in t for cue in _DURABLE_CUES)
+    has_memory_worthy_cue = any(cue in t for cue in _DURABLE_CUES)
+    if has_memory_worthy_cue:
+        return True
+    return False
 
 
 def _normalize_relative_dates(text: str, session_date_time: str) -> str:
     base = _parse_session_date(session_date_time)
     if base is None:
         return text
-    replacements = {
-        "the day before": base - timedelta(days=1),
-        "yesterday": base - timedelta(days=1),
-        "today": base,
-        "tomorrow": base + timedelta(days=1),
+    out = text
+    replacements = [
+        ("the day before", base - timedelta(days=1)),
+        ("yesterday", base - timedelta(days=1)),
+        ("today", base),
+        ("tomorrow", base + timedelta(days=1)),
+        ("last week", base - timedelta(days=7)),
+        ("next week", base + timedelta(days=7)),
+        ("two days ago", base - timedelta(days=2)),
+    ]
+    for phrase, dt in replacements:
+        out = _replace_relative_phrase(out, phrase, _format_date(dt))
+    out = _replace_month_relative(out, "last month", base, -1)
+    out = _replace_month_relative(out, "next month", base, 1)
+    out = _replace_year_relative(out, "last year", base, -1)
+    out = _replace_year_relative(out, "next year", base, 1)
+    out = _replace_weekday_relative(out, base)
+    return out
+
+
+def _replace_relative_phrase(text: str, phrase: str, absolute: str) -> str:
+    pattern = re.compile(rf"(?<!\()\b{re.escape(phrase)}\b(?!\))", re.IGNORECASE)
+    return pattern.sub(f"{absolute} ({phrase})", text)
+
+
+def _replace_month_relative(text: str, phrase: str, base: datetime, delta: int) -> str:
+    month = base.month + delta
+    year = base.year
+    while month < 1:
+        month += 12
+        year -= 1
+    while month > 12:
+        month -= 12
+        year += 1
+    absolute = datetime(year, month, 1).strftime("%B %Y")
+    return _replace_relative_phrase(text, phrase, absolute)
+
+
+def _replace_year_relative(text: str, phrase: str, base: datetime, delta: int) -> str:
+    return _replace_relative_phrase(text, phrase, str(base.year + delta))
+
+
+def _replace_weekday_relative(text: str, base: datetime) -> str:
+    weekdays = {
+        "monday": 0,
+        "tuesday": 1,
+        "wednesday": 2,
+        "thursday": 3,
+        "friday": 4,
+        "saturday": 5,
+        "sunday": 6,
     }
     out = text
-    for phrase, dt in replacements.items():
-        pattern = re.compile(rf"\b{re.escape(phrase)}\b", re.IGNORECASE)
-        if pattern.search(out):
-            out = pattern.sub(f"{_format_date(dt)} ({phrase})", out)
+    for name, idx in weekdays.items():
+        pattern = re.compile(rf"\b(last|next|the previous|the following)\s+{name}\b", re.IGNORECASE)
+        match = pattern.search(out)
+        if not match:
+            continue
+        direction = match.group(1).lower()
+        offset = (base.weekday() - idx) % 7
+        if direction in {"last", "the previous"}:
+            offset = offset or 7
+            dt = base - timedelta(days=offset)
+        else:
+            offset = (idx - base.weekday()) % 7 or 7
+            dt = base + timedelta(days=offset)
+        out = pattern.sub(f"{_format_date(dt)} ({match.group(0)})", out)
     return out
 
 

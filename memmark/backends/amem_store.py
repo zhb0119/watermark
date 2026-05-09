@@ -14,6 +14,7 @@ We expose:
 
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, List, Optional
 
 from memmark.backends.base import MemoryBackendAdapter
@@ -24,17 +25,24 @@ except ModuleNotFoundError:  # pragma: no cover - optional dependency
     AgenticMemorySystem = None  # type: ignore
 
 
+def _strip_code_fence(text: str) -> str:
+    s = (text or "").strip()
+    m = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", s, re.DOTALL | re.IGNORECASE)
+    return m.group(1) if m else s
+
+
 class AMemBackend(MemoryBackendAdapter):
     """Backend adapter for the A-MEM (agentic memory) SDK.
 
-    Per A-MEM upstream paper (`WujiangXu/AgenticMemory`) + Mem0's
-    LoCoMo blog: A-MEM expects pre-extracted, fact-shaped notes
-    (one durable observation per `add_note`). The driver therefore
-    runs LoCoMo's `CONVERSATION2FACTS_PROMPT` per session and feeds
-    the resulting facts (each with dia_id evidence) into A-MEM.
+    Per A-MEM official LoCoMo eval (`A-mem/test_advanced.py:301-305`):
+    A-MEM ingests **turn-by-turn**, not via a separate fact-extraction
+    step. Each LoCoMo turn becomes one ``add_note(text, time)``; A-mem's
+    own internal ``analyze_content`` + ``process_memory`` decide what to
+    keep, link, and evolve. Aligning to this protocol keeps our RQ1
+    utility numbers directly comparable to the A-MEM paper.
     """
 
-    preferred_ingestion_mode = "fact"
+    preferred_ingestion_mode = "turn"
 
     def __init__(
         self,
@@ -144,7 +152,20 @@ class AMemBackend(MemoryBackendAdapter):
         raise ValueError(f"Unsupported operation: {op}")
 
     def search(self, query: str, k: int = 5) -> List[Dict[str, Any]]:
-        return list(self.system.search(query, k=k))
+        # The agiresearch SDK exposes ``search()``; the WujiangXu eval
+        # repo (current install) only ships ``find_related_memories``.
+        # Prefer search if present, otherwise build dicts from
+        # find_related_memories.
+        if hasattr(self.system, "search"):
+            return list(self.system.search(query, k=k))
+        try:
+            related_str, ids = self.system.find_related_memories(query, k=k)
+        except Exception:
+            return []
+        out: List[Dict[str, Any]] = []
+        for note_id in ids:
+            out.append(self._fetch_record(str(note_id)))
+        return out
 
     # ----- watermark sampler injection ----- #
     def attach_sampler(self, sampler: Any) -> None:
@@ -163,15 +184,47 @@ class AMemBackend(MemoryBackendAdapter):
             )
 
     # ----- canonical QA context ----- #
-    def qa_context(self, question: str, k: int = 10) -> Dict[str, Any]:
-        """A-mem's canonical QA path: feed the formatted string from
-        ``find_related_memories(query, k)`` directly into the prompt.
+    def qa_context(
+        self,
+        question: str,
+        k: int = 10,
+        *,
+        category: Optional[int] = None,
+        gold_answer: Optional[str] = None,
+        llm_client: Optional[Any] = None,
+    ) -> Dict[str, Any]:
+        """A-mem QA pipeline.
 
-        The returned string is the same shape A-mem's evolution prompt
-        sees (``memory_id:X\\ttalk start time:Y\\tmemory content:Z\\t...``),
-        i.e. the format A-mem itself uses to render notes for an LLM.
+        When ``llm_client`` and ``category`` are both provided, runs the
+        official **robust** A-mem LoCoMo QA protocol verbatim
+        (``A-mem/test_advanced_robust.py:109-153``):
+
+          1. ``generate_query_llm(question)``  → keyword string
+          2. ``find_related_memories_raw(keywords, k)``  → raw context
+          3. category-specific prompt (cat 2 = DATE-aware, cat 3 = exact
+             words, cat 5 = adversarial A/B with gold), default = exact
+             words from context
+          4. plain-text answer (no json_schema), via ``llm_client``
+          5. return ``{"mode": "answer", "text": <answer>}``
+
+        The QA-time ``llm_client`` is the driver's separate raw client
+        (NOT the watermark-wrapped one inside A-mem); this keeps QA
+        read-only and does not embed bits during verification.
+
+        If ``llm_client`` / ``category`` are absent, falls back to the
+        retrieval-only context path (mode=``context``) using
+        ``find_related_memories``.
         """
 
+        # Robust A-mem QA protocol path
+        if llm_client is not None and category is not None and self.system.memories:
+            return self._qa_amem_robust(
+                question, k=k,
+                category=category, gold_answer=gold_answer,
+                llm_client=llm_client,
+            )
+
+        # Fallback: context-only path
         if not self.system.memories:
             return {"mode": "context", "text": "(no long-term memory available)"}
         try:
@@ -180,6 +233,64 @@ class AMemBackend(MemoryBackendAdapter):
             return {"mode": "context", "text": "(retrieval error)"}
         text = related_str or "(no related memories found)"
         return {"mode": "context", "text": text}
+
+    def _qa_amem_robust(
+        self,
+        question: str,
+        *,
+        k: int,
+        category: int,
+        gold_answer: Optional[str],
+        llm_client: Any,
+    ) -> Dict[str, Any]:
+        from memmark.benchmarks.locomo.qa_eval import (
+            build_amem_keyword_prompt,
+            build_cat_aware_qa_prompt,
+        )
+
+        # Step 1: keyword extraction (test_advanced_robust.py:96-107)
+        keywords = question
+        try:
+            kw_raw = llm_client.complete(
+                [{"role": "user", "content": build_amem_keyword_prompt(question)}],
+                temperature=0.0,
+            )
+            try:
+                import json as _json
+
+                parsed = _json.loads(_strip_code_fence(kw_raw))
+                kws = parsed.get("keywords")
+                if isinstance(kws, str) and kws.strip():
+                    keywords = kws.strip()
+            except Exception:
+                if isinstance(kw_raw, str) and kw_raw.strip():
+                    keywords = kw_raw.strip()
+        except Exception:
+            pass
+
+        # Step 2: raw retrieval (prefer find_related_memories_raw, fallback
+        # to formatted find_related_memories on older A-mem SDK builds)
+        raw_context = ""
+        try:
+            if hasattr(self.system, "find_related_memories_raw"):
+                raw_context = self.system.find_related_memories_raw(keywords, k=k)
+            else:
+                related_str, _ = self.system.find_related_memories(keywords, k=k)
+                raw_context = related_str or ""
+        except Exception:
+            raw_context = ""
+
+        # Step 3: cat-aware prompt + plain-text answer
+        user_prompt, temperature = build_cat_aware_qa_prompt(
+            category, raw_context, question, gold_answer=gold_answer,
+        )
+        try:
+            answer = llm_client.complete(
+                [{"role": "user", "content": user_prompt}], temperature=temperature
+            )
+        except Exception:
+            answer = ""
+        return {"mode": "answer", "text": (answer or "").strip()}
 
     # -- internals ------------------------------------------------- #
     def _fetch_record(self, note_id: str) -> Dict[str, Any]:

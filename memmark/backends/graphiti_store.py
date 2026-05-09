@@ -81,28 +81,19 @@ class GraphitiBackend(MemoryBackendAdapter):
             text = operation["text"]
             session_date_time = operation.get("session_date_time", "")
             ref_time = _parse_reference_time(session_date_time) or datetime.now(timezone.utc)
-            # Per podcast_runner.py canonical pattern: chain new
-            # episodes to the most recent 3 by reference_time so
-            # Graphiti can do temporal supersession against the right
-            # fact set. We pull the chain from Graphiti itself rather
-            # than from `_memories`, because the graph may have
-            # invalidated / re-attached uuids during cognify.
-            previous_uuids: List[str] = []
-            try:
-                prev = await self.graphiti.retrieve_episodes(
-                    ref_time, 3, group_ids=[self.group_id]
-                )
-                previous_uuids = [getattr(p, "uuid", "") for p in prev if getattr(p, "uuid", None)]
-            except Exception:
-                previous_uuids = []
+            # Aligned with Graphiti's official eval
+            # (graphiti/tests/evals/eval_e2e_graph_building.py:53-61):
+            # name='', source_description='', source=EpisodeType.message,
+            # reference_time = session date as datetime, group_id per
+            # user. NO previous_episode_uuids — that's a podcast_runner
+            # demo optimization, not the eval protocol.
             results = await self.graphiti.add_episode(
-                name=operation.get("name", f"memmark_{len(self._memories) + 1}"),
+                name="",
                 episode_body=text,
-                source_description=self.source_description,
+                source_description="",
                 reference_time=ref_time,
                 source=EpisodeType.message if EpisodeType is not None else None,
                 group_id=self.group_id,
-                previous_episode_uuids=previous_uuids or None,
             )
             ep_uuid = getattr(getattr(results, "episode", None), "uuid", None) or (
                 results.episode.uuid if hasattr(results, "episode") else f"g{len(self._memories) + 1}"
@@ -182,14 +173,44 @@ class GraphitiBackend(MemoryBackendAdapter):
         return _run_async(self.search_async(query, top_k=top_k))
 
     # ----- canonical QA context ----- #
-    def qa_context(self, question: str, k: int = 10) -> Dict[str, Any]:
-        """Graphiti's canonical QA path: ``client.search(query, group_ids,
-        num_results=k)`` returns top-k edges; each ``EntityEdge.fact`` is
-        the natural-language fact string Graphiti emits. We render those
-        as the QA context (LoCoMo paper's +Observation row uses an
-        analogous fact-list rendering).
+    def qa_context(
+        self,
+        question: str,
+        k: int = 10,
+        *,
+        category: Any = None,
+        gold_answer: Any = None,
+        llm_client: Any = None,
+    ) -> Dict[str, Any]:
+        """Graphiti QA pipeline.
+
+        When ``llm_client`` and ``category`` are both provided, runs a
+        cat-aware QA protocol mirroring A-mem's ``test_advanced_robust.py``
+        but with Graphiti-native retrieval:
+
+          1. ``client.search(question, group_ids, num_results=k)`` →
+             top-k EntityEdges (NL ``fact`` + ``valid_at``)
+          2. Render edges as context lines: ``[REL] fact (valid_at)``
+          3. Cat-aware prompt (cat 2 = DATE-aware, cat 3 = exact words,
+             cat 5 = adversarial A/B with gold) — verbatim from
+             :func:`build_cat_aware_qa_prompt`
+          4. Plain-text answer via ``llm_client``
+          5. Return ``{"mode": "answer", "text": <answer>}``
+
+        The QA-time ``llm_client`` is the driver's separate raw client
+        (NOT the watermark-wrapped one inside Graphiti); QA is
+        read-only and does not embed bits during verification.
+
+        If ``llm_client`` / ``category`` are absent, falls back to the
+        retrieval-only context path (``mode=context``) — render edge
+        list and let the driver wrap with LoCoMo's generic QA prompt.
+
+        Note: Graphiti has no upstream LoCoMo QA eval to copy
+        verbatim. We borrow A-mem's robust cat-aware prompts so QA
+        across backends is comparable on LoCoMo's category structure.
         """
 
+        # Step 1: Graphiti-native edge retrieval
         try:
             edges = _run_async(self.search_async(question, top_k=k))
         except Exception:
@@ -201,19 +222,39 @@ class GraphitiBackend(MemoryBackendAdapter):
             }
 
         if not edges:
-            return {"mode": "context", "text": "(no related facts in graph)"}
-        lines: List[str] = []
-        for edge in edges:
-            fact = getattr(edge, "fact", "") or ""
-            name = getattr(edge, "name", "") or ""
-            ts = getattr(edge, "valid_at", None) or getattr(
-                edge, "created_at", None
+            context_text = "(no related facts in graph)"
+        else:
+            lines: List[str] = []
+            for edge in edges:
+                fact = getattr(edge, "fact", "") or ""
+                name = getattr(edge, "name", "") or ""
+                ts = getattr(edge, "valid_at", None) or getattr(
+                    edge, "created_at", None
+                )
+                ts_str = ts.isoformat() if ts is not None and hasattr(ts, "isoformat") else ""
+                head = f"[{name}] " if name else ""
+                tail = f" ({ts_str})" if ts_str else ""
+                lines.append(f"- {head}{fact}{tail}")
+            context_text = "\n".join(lines)
+
+        # If caller didn't request the full QA protocol, return rendered
+        # context only and let the driver run its generic QA prompt.
+        if llm_client is None or category is None:
+            return {"mode": "context", "text": context_text}
+
+        # Step 2/3: cat-aware prompt + plain-text answer
+        from memmark.benchmarks.locomo.qa_eval import build_cat_aware_qa_prompt
+
+        user_prompt, temperature = build_cat_aware_qa_prompt(
+            category, context_text, question, gold_answer=gold_answer,
+        )
+        try:
+            answer = llm_client.complete(
+                [{"role": "user", "content": user_prompt}], temperature=temperature
             )
-            ts_str = ts.isoformat() if ts is not None and hasattr(ts, "isoformat") else ""
-            head = f"[{name}] " if name else ""
-            tail = f" ({ts_str})" if ts_str else ""
-            lines.append(f"- {head}{fact}{tail}")
-        return {"mode": "context", "text": "\n".join(lines)}
+        except Exception:
+            answer = ""
+        return {"mode": "answer", "text": (answer or "").strip()}
 
 
 def _run_async(coro):

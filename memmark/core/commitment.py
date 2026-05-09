@@ -33,6 +33,7 @@ def make_commitment(
     bits_embedded: int,
     bit_index_after: int,
     keep_reveal: bool = True,
+    extra_carriers: tuple = (),
 ) -> AuditRecord:
     """Compute commit_t per README §9.1.
 
@@ -86,4 +87,5 @@ def make_commitment(
         watermark_version=decision.watermark_version,
         candidates=list(decision.candidates) if keep_reveal else None,
         probabilities=dict(decision.probabilities) if keep_reveal else None,
+        extra_carriers=tuple(extra_carriers),
     )

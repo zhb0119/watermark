@@ -232,10 +232,18 @@ class LoCoMoDriver:
                     f"category={q.category} evidence={q.evidence} text={q.question}",
                     flush=True,
                 )
-            # Per-backend canonical retrieval: qa_context returns either
-            # mode=context (rendered memory text) or mode=answer (backend
-            # already produced the final answer itself).
-            ctx = self.wm.backend.qa_context(q.question, k=10)
+            # Per-backend canonical retrieval / QA. qa_context returns
+            # either mode=context (rendered memory text — driver wraps
+            # in LoCoMo QA prompt) or mode=answer (backend ran its own
+            # full official QA protocol, e.g. A-mem robust with
+            # cat-aware prompts).
+            ctx = self.wm.backend.qa_context(
+                q.question,
+                k=10,
+                category=q.category,
+                gold_answer=q.answer,
+                llm_client=self.fact_extractor_llm,
+            )
             if ctx.get("mode") == "answer":
                 answer = (ctx.get("text") or "").strip()
                 qa_trace = {"context": "", "context_chars": 0, "mode": "answer"}
@@ -290,173 +298,6 @@ class LoCoMoDriver:
                 flush=True,
             )
         return result
-
-    def _ingest_turn_mode(
-        self,
-        conversation: LoCoMoConversation,
-        session: LoCoMoSession,
-        turns: List[LoCoMoTurn],
-        result: "LoCoMoDriverResult",
-        recent_dialog_ids: List[str],
-    ) -> None:
-        for turn_i, turn in enumerate(turns, start=1):
-            if not self.turn_filter(turn, session.summary):
-                if self.progress:
-                    print(
-                        f"[turn {turn_i}/{len(turns)}] {turn.dia_id} skipped",
-                        flush=True,
-                    )
-                continue
-            recent_dialog_ids[:] = (recent_dialog_ids + [turn.dia_id])[-8:]
-            self._evolve_one(
-                _format_turn(turn, session.date_time),
-                dia_ids=[turn.dia_id],
-                session_index=session.index,
-                speaker=turn.speaker,
-                recent_dialog_ids=recent_dialog_ids,
-                result=result,
-                source_label=turn.dia_id,
-                progress_label=f"turn {turn_i}/{len(turns)} {turn.dia_id}",
-            )
-
-    def _ingest_session_mode(
-        self,
-        conversation: LoCoMoConversation,
-        session: LoCoMoSession,
-        turns: List[LoCoMoTurn],
-        result: "LoCoMoDriverResult",
-        recent_dialog_ids: List[str],
-    ) -> None:
-        kept = [t for t in turns if self.turn_filter(t, session.summary)]
-        if not kept:
-            return
-        all_dia_ids = [t.dia_id for t in kept]
-        recent_dialog_ids[:] = (recent_dialog_ids + all_dia_ids)[-8:]
-        self._evolve_one(
-            _format_session_text(session, kept),
-            dia_ids=all_dia_ids,
-            session_index=session.index,
-            speaker="",
-            recent_dialog_ids=recent_dialog_ids,
-            result=result,
-            source_label=f"session_{session.index}",
-            progress_label=f"session {session.index}",
-        )
-
-    def _ingest_fact_mode(
-        self,
-        conversation: LoCoMoConversation,
-        session: LoCoMoSession,
-        turns: List[LoCoMoTurn],
-        result: "LoCoMoDriverResult",
-        recent_dialog_ids: List[str],
-    ) -> None:
-        kept = [t for t in turns if self.turn_filter(t, session.summary)]
-        if not kept or self.fact_extractor_llm is None:
-            self._ingest_turn_mode(
-                conversation, session, kept, result, recent_dialog_ids
-            )
-            return
-        try:
-            from memmark.extractors import extract_session_facts
-        except ImportError:
-            self._ingest_turn_mode(
-                conversation, session, kept, result, recent_dialog_ids
-            )
-            return
-        facts = extract_session_facts(
-            llm_client=self.fact_extractor_llm,
-            speaker_a=conversation.speaker_a,
-            speaker_b=conversation.speaker_b,
-            session_index=session.index,
-            session_date_time=session.date_time,
-            turns=kept,
-        )
-        if not facts:
-            self._ingest_turn_mode(
-                conversation, session, kept, result, recent_dialog_ids
-            )
-            return
-        for fact_i, fact in enumerate(facts, start=1):
-            dia_ids = list(fact.dia_ids or [kept[0].dia_id])
-            recent_dialog_ids[:] = (recent_dialog_ids + dia_ids)[-8:]
-            self._evolve_one(
-                fact.as_event_text(),
-                dia_ids=dia_ids,
-                session_index=session.index,
-                speaker=fact.speaker,
-                recent_dialog_ids=recent_dialog_ids,
-                result=result,
-                source_label=f"fact_{session.index}",
-                progress_label=f"fact {fact_i}/{len(facts)} session_{session.index}",
-            )
-
-    def _evolve_one(
-        self,
-        event_text: str,
-        *,
-        dia_ids: List[str],
-        session_index: int,
-        speaker: str,
-        recent_dialog_ids: List[str],
-        result: "LoCoMoDriverResult",
-        source_label: str,
-        progress_label: str,
-    ) -> None:
-        if self.progress:
-            preview = event_text.replace("\n", " ")[:120]
-            print(f"[{progress_label}] evolve start: {preview}", flush=True)
-        try:
-            evolve_result = self.wm.evolve(
-                event_text,
-                recent_dialog_ids=recent_dialog_ids,
-                retrieved_memory_ids=None,
-                dia_ids=dia_ids,
-                session_index=session_index,
-                speaker=speaker,
-            )
-        except ValueError:
-            if self.progress:
-                print(f"[{progress_label}] acceptance_fail", flush=True)
-            result.extracted_events.append(
-                {
-                    "session": session_index,
-                    "source": source_label,
-                    "dia_ids": dia_ids,
-                    "speaker": speaker,
-                    "text": event_text,
-                    "applied": False,
-                    "reason": "acceptance_fail",
-                }
-            )
-            return
-        result.decisions.append(evolve_result.decision)
-        result.audits.append(evolve_result.audit)
-        if self.progress:
-            print(
-                f"[{progress_label}] evolve done tau={evolve_result.audit.tau} "
-                f"bits={evolve_result.audit.bits_embedded} "
-                f"selected={evolve_result.audit.selected_candidate_id}",
-                flush=True,
-            )
-        result.extracted_events.append(
-            {
-                "session": session_index,
-                "source": source_label,
-                "dia_ids": dia_ids,
-                "speaker": speaker,
-                "text": event_text,
-                "applied": True,
-                "selected": evolve_result.audit.selected_candidate_id,
-                "tau": evolve_result.audit.tau,
-                "bits_embedded": evolve_result.audit.bits_embedded,
-            }
-        )
-
-
-    # ----------------------------------------------------------- #
-    # Per-mode ingestion helpers
-    # ----------------------------------------------------------- #
 
     def _ingest_turn_mode(
         self,
@@ -706,6 +547,10 @@ class LoCoMoDriver:
                 )
         audit = new_audits[-1] if new_audits else None
         bits_for_event = sum(a.bits_embedded for a in new_audits)
+        # Pick the last new audit as the representative one to log on the
+        # extracted event (one event can trigger multiple SDK-internal
+        # LLM calls → multiple audits; we summarize via the last one).
+        last_audit = new_audits[-1] if new_audits else None
         if self.progress:
             print(
                 f"[evolve:{label}:done] llm_calls={len(new_audits)} "
@@ -721,9 +566,10 @@ class LoCoMoDriver:
                 "speaker": speaker,
                 "text": event_text,
                 "applied": True,
-                "selected": audit.selected_candidate_id if audit else "",
-                "tau": audit.tau if audit else "",
-                "bits_embedded": audit.bits_embedded if audit else 0,
+                "llm_calls": len(new_audits),
+                "selected": last_audit.selected_candidate_id if last_audit else "",
+                "tau": last_audit.tau if last_audit else "",
+                "bits_embedded": bits_for_event,
                 "memory_record": record,
             }
         )

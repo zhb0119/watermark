@@ -117,26 +117,33 @@ def _extract_json_payload(raw: str) -> Any:
 
 def parse_agentmark_response(
     raw: str,
-) -> Tuple[List[Any], List[float], str]:
-    """Parse ``{candidates: [{decision, weight}, ...], thought, carrier}``
-    → ``(decisions, weights, carrier)``.
+) -> Tuple[List[Any], List[float], List[str]]:
+    """Parse ``{candidates: [{decision, weight}, ...], thought,
+    carriers / carrier}`` → ``(decisions, weights, carriers)``.
 
-    Returns ``([], [], "llm_call")`` if the response can't be parsed
-    as the AgentMark wrapper. Each ``decision`` is whatever shape the
-    LLM emitted (typically ``dict`` for structured output, or
-    JSON-stringifiable for SDK consumption).
+    Returns ``([], [], ["llm_call"])`` when parsing fails.
 
-    ``carrier`` is the LLM-self-reported decision class. Falls back to
-    ``"llm_call"`` if the LLM omitted the field or returned a value
-    outside :data:`CARRIER_VOCAB`.
+    The LLM may report **multiple** carriers per call (mixed-decision
+    SDK calls like Graphiti's ``extract_nodes_and_edges`` can both
+    pick relation labels (semantic_realization) AND attach to existing
+    entities (link_target) in the same call). We accept either:
+
+      * ``"carriers": ["update_target", "semantic_realization"]``  (preferred)
+      * ``"carrier":  "update_target"``                            (legacy single)
+      * ``"carrier":  ["update_target", "..."]``                   (also accepted)
+
+    Returned list is deduplicated, in LLM-reported order. The first
+    entry is treated as the primary tau by the sampler; the rest go
+    into ``AuditRecord.extra_carriers`` so RQ5 can count the audit in
+    every relevant carrier bucket.
     """
 
     parsed = _extract_json_payload(raw)
     if not isinstance(parsed, dict):
-        return [], [], "llm_call"
+        return [], [], ["llm_call"]
     candidates = parsed.get("candidates")
     if not isinstance(candidates, list):
-        return [], [], "llm_call"
+        return [], [], ["llm_call"]
     decisions: List[Any] = []
     weights: List[float] = []
     for c in candidates:
@@ -148,9 +155,24 @@ def parse_agentmark_response(
             w = 0.0
         decisions.append(c["decision"])
         weights.append(max(w, 1e-6))
-    raw_carrier = str(parsed.get("carrier", "")).strip().lower()
-    carrier = raw_carrier if raw_carrier in CARRIER_VOCAB else "llm_call"
-    return decisions, weights, carrier
+
+    raw_carriers = parsed.get("carriers")
+    if raw_carriers is None:
+        raw_carriers = parsed.get("carrier", [])
+    if isinstance(raw_carriers, str):
+        raw_carriers = [raw_carriers]
+    if not isinstance(raw_carriers, list):
+        raw_carriers = []
+    carriers: List[str] = []
+    for c in raw_carriers:
+        if not isinstance(c, str):
+            continue
+        cc = c.strip().lower()
+        if cc in CARRIER_VOCAB and cc not in carriers:
+            carriers.append(cc)
+    if not carriers:
+        carriers = ["llm_call"]
+    return decisions, weights, carriers
 
 
 # --------------------------------------------------------------- #
@@ -222,7 +244,7 @@ class WatermarkedSampler:
         ctx_text: str,
         *,
         prompt_name: str = "",
-        tau: str = "llm_call",
+        tau: Any = "llm_call",
     ) -> str:
         """Keyed-pick over ``(decisions, weights)``; emit audit.
 
@@ -230,12 +252,29 @@ class WatermarkedSampler:
         produced (each is the SDK's expected output for that call).
         ``weights`` are the LLM-self-reported per-candidate weights
         (will be renormalized).
+
+        ``tau`` may be a single string (legacy) or a list of strings
+        (multi-label per :func:`parse_agentmark_response`). The first
+        item is recorded as the primary ``tau`` on
+        :class:`DecisionPoint` / :class:`AuditRecord`; remaining items
+        go into ``AuditRecord.extra_carriers`` for RQ5 multi-bucket
+        counting.
         """
 
         if not decisions:
             return ""
         if len(decisions) == 1:
             return decisions[0]
+
+        # Normalize tau into (primary, extras)
+        if isinstance(tau, str):
+            tau_list = [tau] if tau else ["llm_call"]
+        elif isinstance(tau, (list, tuple)) and tau:
+            tau_list = [str(t) for t in tau if isinstance(t, str)] or ["llm_call"]
+        else:
+            tau_list = ["llm_call"]
+        primary_tau = tau_list[0]
+        extra_taus = tuple(tau_list[1:])
 
         # Renormalize weights
         total = float(sum(weights))
@@ -269,7 +308,7 @@ class WatermarkedSampler:
             cands_obj.append(
                 Candidate(
                     candidate_id=cid,
-                    carrier_type=tau,
+                    carrier_type=primary_tau,
                     payload={"text": dec, "prompt_name": prompt_name},
                     operation={},
                     utility_score=normalized[idx - 1],
@@ -279,7 +318,7 @@ class WatermarkedSampler:
 
         decision = DecisionPoint(
             decision_id=f"d{self.round_num + 1}",
-            tau=tau,
+            tau=primary_tau,
             candidates=cands_obj,
             probabilities=probs,
             context=ctx_serialized,
@@ -302,6 +341,7 @@ class WatermarkedSampler:
             bits_embedded=sample.bits_embedded,
             bit_index_after=self.bit_index,
             keep_reveal=True,
+            extra_carriers=extra_taus,
         )
         self.merkle_log.append(audit.commitment)
         self.audit_log.append(audit)
@@ -397,7 +437,7 @@ class _AMemInnerWrapper:
         if not isinstance(raw, str) or not raw.strip():
             return self._passthrough(prompt, response_format, temperature)
 
-        decisions, weights, carrier = parse_agentmark_response(raw)
+        decisions, weights, carriers = parse_agentmark_response(raw)
         if len(decisions) < 2:
             fallback_decisions = self._fallback_candidates(raw, response_format)
             if len(fallback_decisions) < 2:
@@ -418,7 +458,7 @@ class _AMemInnerWrapper:
             weights,
             ctx_text=prompt,
             prompt_name=self._prompt_name,
-            tau=carrier,
+            tau=carriers,
         )
 
     def _passthrough(self, prompt, response_format, temperature) -> str:
@@ -542,7 +582,7 @@ def make_watermarked_graphiti_client(sampler: WatermarkedSampler, underlying: An
                     "AGMWrapped",
                     candidates=(List[Candidate_M], ...),
                     thought=(str, ""),
-                    carrier=(str, "llm_call"),
+                    carriers=(List[str], []),
                 )
             except Exception:
                 return await self._underlying._generate_response(
@@ -608,17 +648,30 @@ def make_watermarked_graphiti_client(sampler: WatermarkedSampler, underlying: An
             ]
             ctx_text = "\n".join(getattr(m, "content", "") for m in messages)
 
-            raw_carrier = ""
+            # Multi-label carriers — accept either ``carriers`` (list)
+            # or ``carrier`` (single string for backward compat).
+            carriers: List[str] = []
             if isinstance(wrapped_resp, dict):
-                raw_carrier = str(wrapped_resp.get("carrier", "")).strip().lower()
-            carrier = raw_carrier if raw_carrier in CARRIER_VOCAB else "llm_call"
+                raw_cs = wrapped_resp.get("carriers")
+                if raw_cs is None:
+                    raw_cs = wrapped_resp.get("carrier", [])
+                if isinstance(raw_cs, str):
+                    raw_cs = [raw_cs]
+                if isinstance(raw_cs, list):
+                    for c in raw_cs:
+                        if isinstance(c, str):
+                            cc = c.strip().lower()
+                            if cc in CARRIER_VOCAB and cc not in carriers:
+                                carriers.append(cc)
+            if not carriers:
+                carriers = ["llm_call"]
 
             chosen_str = self._sampler.intercept(
                 decision_strs,
                 weights,
                 ctx_text=ctx_text,
                 prompt_name="graphiti",
-                tau=carrier,
+                tau=carriers,
             )
             try:
                 chosen = json.loads(chosen_str)

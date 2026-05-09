@@ -95,10 +95,14 @@ def build_cat_aware_qa_prompt(
         prompt = (
             f"Based on the context: {context}, answer the following "
             f"question. Use DATE of CONVERSATION to answer with an "
-            f"approximate date.\nPlease generate the shortest possible "
-            f"answer, using words from the conversation where possible, "
-            f"and avoid using any subjects.\n\n"
-            f"Question: {question} Short answer:"
+            f"approximate absolute date or year. Do not answer with "
+            f"relative time expressions such as yesterday, today, tomorrow, "
+            f"last year, next year, last month, or next month; convert them "
+            f"using the conversation date.\nPlease generate the shortest "
+            f"possible answer and avoid using any subjects. Output only the "
+            f"answer text; do not include labels, prefixes, or phrases such "
+            f"as Short answer.\n\n"
+            f"Question: {question}\nAnswer:"
         )
         return prompt, 0.7
     # cat 3, default 1/4

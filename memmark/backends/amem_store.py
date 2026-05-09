@@ -14,6 +14,9 @@ We expose:
 
 from __future__ import annotations
 
+import contextlib
+import io
+import os
 import re
 from typing import Any, Dict, List, Optional
 
@@ -113,8 +116,11 @@ class AMemBackend(MemoryBackendAdapter):
             # find_related_memories as `talk start time:<value>`. Pass
             # LoCoMo's session_date_time so QA-time retrieval sees the
             # canonical talk-time anchor (matches A-mem's intended usage).
-            note_id = self.system.add_note(
-                text, time=session_date_time or None, tags=tags
+            note_id = self._quiet_amem_call(
+                self.system.add_note,
+                text,
+                time=session_date_time or None,
+                tags=tags,
             )
             self._evidence[note_id] = {
                 "dia_ids": evidence,
@@ -131,7 +137,7 @@ class AMemBackend(MemoryBackendAdapter):
                 self.system.delete(target_id)
             except Exception:
                 pass
-            note_id = self.system.add_note(new_text)
+            note_id = self._quiet_amem_call(self.system.add_note, new_text)
             merged_evidence = list(
                 dict.fromkeys(
                     list(old_meta.get("dia_ids", [])) + evidence
@@ -278,6 +284,13 @@ class AMemBackend(MemoryBackendAdapter):
             retrieval_error = f"{type(exc).__name__}: {exc}"
             raw_context = ""
 
+        retrieval_repair = False
+        if not raw_context.strip() and retrieval_error:
+            repaired_context = self._safe_find_related_memories_raw(keywords, k)
+            if repaired_context.strip():
+                raw_context = repaired_context
+                retrieval_repair = True
+
         retrieval_fallback = False
         if not isinstance(raw_context, str):
             raw_context = str(raw_context or "")
@@ -304,6 +317,7 @@ class AMemBackend(MemoryBackendAdapter):
             "keywords": keywords,
             "keyword_raw": kw_raw,
             "retrieval_error": retrieval_error,
+            "retrieval_repair": retrieval_repair,
             "retrieval_fallback": retrieval_fallback,
             "user_prompt": user_prompt,
         }
@@ -331,12 +345,66 @@ class AMemBackend(MemoryBackendAdapter):
             )
         return base
 
+    @staticmethod
+    def _quiet_amem_call(func: Any, *args: Any, **kwargs: Any) -> Any:
+        if os.getenv("MEMMARK_DEBUG_AMEM"):
+            return func(*args, **kwargs)
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            return func(*args, **kwargs)
+
     def _records_from_ids(self, ids: List[Any]) -> List[Dict[str, Any]]:
         note_ids = list(self.system.memories.keys())
         out: List[Dict[str, Any]] = []
         for item in ids:
             note_id = str(item)
-            if isinstance(item, int) and 0 <= item < len(note_ids):
-                note_id = note_ids[item]
+            idx = self._coerce_memory_index(item, len(note_ids))
+            if idx is not None:
+                note_id = note_ids[idx]
             out.append(self._fetch_record(note_id))
         return out
+
+    def _safe_find_related_memories_raw(self, query: str, k: int) -> str:
+        retriever = getattr(self.system, "retriever", None)
+        if retriever is None or not hasattr(retriever, "search"):
+            return ""
+        try:
+            indices = retriever.search(query, k)
+        except Exception:
+            return ""
+        all_memories = list(self.system.memories.values())
+        chunks: List[str] = []
+        for item in indices:
+            idx = self._coerce_memory_index(item, len(all_memories))
+            if idx is None:
+                continue
+            note = all_memories[idx]
+            chunks.append(self._format_raw_note(note))
+            for offset, neighbor in enumerate(list(getattr(note, "links", []) or [])):
+                if offset >= k:
+                    break
+                neighbor_idx = self._coerce_memory_index(neighbor, len(all_memories))
+                if neighbor_idx is not None:
+                    chunks.append(self._format_raw_note(all_memories[neighbor_idx]))
+        return "\n".join(chunks)
+
+    @staticmethod
+    def _coerce_memory_index(value: Any, size: int) -> Optional[int]:
+        if isinstance(value, int):
+            idx = value
+        elif isinstance(value, str) and value.isdigit():
+            idx = int(value)
+        else:
+            return None
+        if 0 <= idx < size:
+            return idx
+        return None
+
+    @staticmethod
+    def _format_raw_note(note: Any) -> str:
+        return (
+            "talk start time:" + str(getattr(note, "timestamp", ""))
+            + "memory content: " + str(getattr(note, "content", ""))
+            + "memory context: " + str(getattr(note, "context", ""))
+            + "memory keywords: " + str(getattr(note, "keywords", []))
+            + "memory tags: " + str(getattr(note, "tags", []))
+        )

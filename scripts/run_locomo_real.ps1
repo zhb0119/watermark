@@ -9,21 +9,32 @@ param(
     [int]$MaxSessions = 5,
     [int]$MaxQa = 50,
     [int]$AsyncMaxConcurrency = 4,
-    [switch]$NoAsyncAssess
+    [switch]$NoAsyncAssess,
+    [switch]$NoClean
 )
 
 function Write-Step {
     param([string]$Message)
-    $ts = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    Write-Host "[$ts] $Message"
+    Write-Host "› $Message"
 }
 
 if (-not $ApiKey) {
     throw "Set MEMMARK_API_KEY first or pass -ApiKey '<your OpenRouter key>'."
 }
 
-Write-Step "MemMark LoCoMo real run"
-Write-Step "conversation=$Conversation backend=$Backend model=$Model sessions=$MaxSessions qa=$MaxQa async=$(-not $NoAsyncAssess)"
+if (-not $NoClean) {
+    Clear-Host
+}
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
+$env:PYTHONIOENCODING = "utf-8"
+$env:AGENTMARK_DEBUG_SAMPLER = ""
+
+Write-Host ""
+Write-Host "MemMark LoCoMo"
+Write-Host "--------------"
+Write-Step "conv=$Conversation backend=$Backend model=$Model"
+Write-Step "sessions=$MaxSessions qa=$MaxQa async=$(-not $NoAsyncAssess)"
+Write-Step "output=$Output"
 
 $env:MEMMARK_API_KEY = $ApiKey
 $env:MEMMARK_BASE_URL = "https://openrouter.ai/api/v1"
@@ -47,9 +58,8 @@ if ($OutputDir) {
     New-Item -ItemType Directory -Force $OutputDir | Out-Null
 }
 
-Write-Step "output=$Output"
-Write-Step "checking LLM client"
-python -c "from memmark.llm import OpenAIChatClient; c=OpenAIChatClient(); c.complete([{'role':'user','content':'reply only ok'}], temperature=0); print('LLM ok:', c.model)"
+Write-Step "checking LLM"
+python -c "from memmark.llm import OpenAIChatClient; c=OpenAIChatClient(); c.complete([{'role':'user','content':'ok'}], temperature=0); print('› llm=ok model=' + c.model)"
 if ($LASTEXITCODE -ne 0) {
     throw "LLM client check failed with exit code $LASTEXITCODE"
 }
@@ -72,12 +82,12 @@ if (-not $NoAsyncAssess) {
     $RunArgs += @("--async-assess", "--async-max-concurrency", $AsyncMaxConcurrency)
 }
 
-Write-Step "running progress view"
+Write-Step "running"
 $started = Get-Date
 python @RunArgs
 $exitCode = $LASTEXITCODE
 $elapsed = (Get-Date) - $started
-Write-Step "Finished exit_code=$exitCode elapsed=$($elapsed.ToString())"
+Write-Step "done exit=$exitCode elapsed=$($elapsed.ToString())"
 if ($exitCode -ne 0) {
     exit $exitCode
 }

@@ -24,6 +24,7 @@ Two hooks, one shared core:
 
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import json
 import re
@@ -31,7 +32,7 @@ from typing import Any, Dict, List, Tuple
 
 from memmark.core.commitment import make_commitment
 from memmark.core.context import derive_nonce
-from memmark.core.merkle_log import SessionMerkleLog
+from memmark.core.merkle_log import SessionMerkleLog, merkle_proof
 from memmark.core.sampler import sample_memory_transition
 from memmark.core.types import Candidate, DecisionPoint, SessionHeader
 
@@ -357,7 +358,26 @@ class WatermarkedSampler:
 
     # ----- session sealing ------------------------------------------- #
     def seal_session(self) -> SessionHeader:
-        return self.merkle_log.seal()
+        """Seal the Merkle log and attach per-leaf inclusion proofs to
+        each ``AuditRecord`` so R3 verification stays smooth under
+        structural attacks (pruning / dedup / poisoning) — each leaf
+        verifies independently against ``anchor.root`` instead of
+        requiring a rebuilt-root match across the post-attack leaf set.
+        """
+
+        header = self.merkle_log.seal()
+        leaves = list(self.merkle_log.leaves)
+        new_audit_log: List[Any] = []
+        for idx, audit in enumerate(self.audit_log):
+            try:
+                proof = merkle_proof(leaves, idx)
+            except IndexError:
+                proof = None
+            new_audit_log.append(
+                dataclasses.replace(audit, merkle_inclusion_proof=proof)
+            )
+        self.audit_log = new_audit_log
+        return header
 
     # ----- internals ------------------------------------------------- #
     def _candidate_id(self, idx: int, payload_text: str) -> str:

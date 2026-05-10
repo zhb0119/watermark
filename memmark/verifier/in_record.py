@@ -122,11 +122,22 @@ def verify_in_record(
         )
         commit_ok = rebuilt.commitment == audit.commitment
 
-        try:
-            proof = merkle_proof(leaves, idx)
-            proof_ok = proof.verify() and proof.root == anchor.root
-        except IndexError:
-            proof_ok = False
+        # Prefer the seal-time per-leaf inclusion proof stored on the
+        # audit (Method B): each leaf verifies independently against
+        # anchor.root, so structural attacks like pruning / dedup /
+        # poisoning produce smooth bit_recovery degradation instead of
+        # a rebuilt-root mismatch killing every remaining leaf at once.
+        # Fallback to rebuilt-tree proof for legacy audits without the
+        # stored proof.
+        stored_proof = getattr(audit, "merkle_inclusion_proof", None)
+        if stored_proof is not None:
+            proof_ok = stored_proof.verify() and stored_proof.root == anchor.root
+        else:
+            try:
+                proof = merkle_proof(leaves, idx)
+                proof_ok = proof.verify() and proof.root == anchor.root
+            except IndexError:
+                proof_ok = False
 
         decoded_bits = decode_memory_transition(
             decision, selected_candidate_id=audit.selected_candidate_id

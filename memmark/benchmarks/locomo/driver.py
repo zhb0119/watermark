@@ -268,6 +268,25 @@ class LoCoMoDriver:
 
         self._progress.line("[seal] finalizing watermark anchor")
         result.anchor = self.wm.seal_session()
+        # Snapshot the canonical audit set AFTER seal so it matches
+        # anchor.leaf_count exactly. Driver-side incremental extend was
+        # missing partial audits when wm.backend.apply() raised mid-call
+        # (see note in _evolve_one). Single source of truth = sampler.
+        result.audits = list(self.wm.audits)
+        result.decisions = [
+            DecisionPoint(
+                decision_id=a.decision_id,
+                tau=a.tau,
+                candidates=a.candidates,
+                probabilities=a.probabilities,
+                context=a.context,
+                round_num=a.round_num,
+                nonce=a.nonce,
+                watermark_version=a.watermark_version,
+            )
+            for a in result.audits
+            if a.candidates and a.probabilities
+        ]
         self._progress.line("[snapshot] reading final memory state")
         result.memory_snapshot_final = self.wm.backend.snapshot()
         result.capacity_stats = _capacity_stats(result.audits, result.decisions)
@@ -346,7 +365,7 @@ class LoCoMoDriver:
             )
             if ctx.get("mode") == "answer":
                 answer = (ctx.get("text") or "").strip()
-                context_text = ctx.get("context") or ""
+                context_text = ctx.get("context") or ctx.get("retrieved_context") or ""
                 qa_trace = {
                     "context": context_text,
                     "context_chars": len(context_text),
@@ -370,7 +389,11 @@ class LoCoMoDriver:
         bleu = bleu1(answer, q.answer)
         rouge = rouge_l(answer, q.answer)
         correct = bool(self.qa_judge(q, answer))
-        evidence_recall = _evidence_recall(q, result.memory_snapshot_final)
+        # QA-time evidence recall: did the rendered context the LLM
+        # actually saw contain the question's evidence dia_ids? Was
+        # previously a snapshot-wide check that returned the same
+        # number for every baseline regardless of QA quality.
+        evidence_recall = _evidence_recall(q, context_text)
         return {
             "index": qa_i,
             "question": q.question,
@@ -413,7 +436,7 @@ class LoCoMoDriver:
             "rougeL": 0.0,
             "judge_correct": False,
             "correct": False,
-            "evidence_recall": _evidence_recall(q, result.memory_snapshot_final),
+            "evidence_recall": _evidence_recall(q, ""),
             "memory_record_count": len(result.memory_snapshot_final),
             "qa_trace": qa_trace,
         }
@@ -629,21 +652,13 @@ class LoCoMoDriver:
             self.wm.clear_event_context()
 
         new_audits = self.wm.audits[before:]
-        result.audits.extend(new_audits)
-        for audit_record in new_audits:
-            if audit_record.candidates and audit_record.probabilities:
-                result.decisions.append(
-                    DecisionPoint(
-                        decision_id=audit_record.decision_id,
-                        tau=audit_record.tau,
-                        candidates=audit_record.candidates,
-                        probabilities=audit_record.probabilities,
-                        context=audit_record.context,
-                        round_num=audit_record.round_num,
-                        nonce=audit_record.nonce,
-                        watermark_version=audit_record.watermark_version,
-                    )
-                )
+        # NOTE: we deliberately do NOT extend result.audits here. The
+        # canonical audit set is wm.sampler.audit_log (== merkle_log
+        # leaves at seal time). Driver-side per-event extension misses
+        # partial audits when apply() raises mid-call, causing
+        # anchor.leaf_count > result.audits and breaking R2/R3
+        # root_matches downstream. result.audits / result.decisions
+        # are populated once after seal_session below.
         audit = new_audits[-1] if new_audits else None
         bits_for_event = sum(a.bits_embedded for a in new_audits)
         # Pick the last new audit as the representative one to log on the
@@ -816,20 +831,28 @@ def _default_qa_judge(question: LoCoMoQuestion, answer: str) -> bool:
 
 
 def _evidence_recall(
-    question: LoCoMoQuestion, snapshot: List[Dict[str, Any]]
+    question: LoCoMoQuestion, retrieved_context: str
 ) -> float:
-    """Fraction of QA's `evidence` dia_ids that appear in *some*
-    memory record's `dia_ids`. Used by RQ5 evidence-grounded
-    integrity (README §10.7).
+    """Fraction of QA's ``evidence`` dia_ids that appear in the
+    **retrieved memory context** the LLM actually saw at QA time.
+
+    Previously this scanned the full memory snapshot's dia_ids, which
+    only measured ingestion completeness — every baseline (including
+    random_replace with empty answers) returned the same number on
+    conv 8 because they all ingested the same turns. This new version
+    measures *retrieval* fidelity by checking whether each
+    ``question.evidence`` dia_id (e.g. ``"D1:10"``) appears as a
+    substring in the rendered ``retrieved_context`` string the QA
+    pipeline produced. Backends emit dia_ids inline in their context
+    rendering (A-mem: ``[D1:10]`` markers; Graphiti: edge name /
+    valid_at lines), so substring match is sufficient.
     """
 
     if not question.evidence:
         return 1.0  # no evidence required
-    seen: set = set()
-    for record in snapshot:
-        for d in record.get("dia_ids") or []:
-            seen.add(d)
-    hit = sum(1 for d in question.evidence if d in seen)
+    if not retrieved_context:
+        return 0.0
+    hit = sum(1 for d in question.evidence if d in retrieved_context)
     return hit / len(question.evidence)
 
 

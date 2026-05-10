@@ -109,12 +109,21 @@ def _parse_sample(sample: dict) -> LoCoMoConversation:
     for q in sample.get("qa", []) or []:
         if not isinstance(q, dict):
             continue
+        category = int(q.get("category", 0))
+        # LoCoMo cat-5 (adversarial) ships the gold under
+        # ``adversarial_answer`` rather than ``answer``; A-mem's
+        # load_dataset.py:17-21 selects between the two by category
+        # and we mirror that so cat-5 gold isn't silently empty.
+        if category == 5:
+            gold = str(q.get("adversarial_answer") or q.get("answer") or "")
+        else:
+            gold = str(q.get("answer", ""))
         qa.append(
             LoCoMoQuestion(
                 question=str(q.get("question", "")),
-                answer=str(q.get("answer", "")),
+                answer=gold,
                 evidence=[str(e) for e in (q.get("evidence") or [])],
-                category=int(q.get("category", 0)),
+                category=category,
             )
         )
 

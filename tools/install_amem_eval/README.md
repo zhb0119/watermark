@@ -3,7 +3,7 @@
 A-mem 有两份发行:
 
 1. **SDK** — `agiresearch/A-mem`,pip-installable,但 `AgenticMemorySystem` 砍掉了 `find_related_memories_raw`。
-2. **Eval repo** — `WujiangXu/AgenticMemory`,A-mem 论文 LoCoMo eval 用的版本,有 `find_related_memories_raw`,但**不能直接 pip install**(没 setup.py)。
+2. **Eval repo** — `WujiangXu/AgenticMemory`,A-mem 论文 LoCoMo eval 用的版本,有 `find_related_memories_raw`。部分 revision 没有 `setup.py`,不能直接 pip install。
 
 我们 QA path(`memmark/backends/amem_store.py:_qa_amem_robust`)按 `test_advanced_robust.py` 协议跑,需要 `_raw`。所以**装 eval 版**。
 
@@ -17,7 +17,9 @@ python tools/install_amem_eval/install.py
 
 会做四件事:
 1. `git clone https://github.com/WujiangXu/AgenticMemory.git ../A-mem`
-2. 把本目录下 `setup.py` + `agentic_memory/` shim 复制到 `../A-mem/`
+2. 把本目录下 `setup.py` 复制到 `../A-mem/`
+   - 新版 `agentic_memory/` 包结构: 保留原包,不覆盖
+   - 旧版 `memory_layer.py` 平铺结构: 额外复制 `agentic_memory/` shim
 3. `pip uninstall -y agentic-memory`(如果之前装过 SDK)
 4. `pip install ../A-mem`
 
@@ -25,6 +27,15 @@ python tools/install_amem_eval/install.py
 
 ```
 AgenticMemorySystem source: memory_layer
+  find_related_memories:     True
+  find_related_memories_raw: True
+✅ Install OK
+```
+
+新版包结构的成功输出也可能是:
+
+```
+AgenticMemorySystem source: agentic_memory.memory_system
   find_related_memories:     True
   find_related_memories_raw: True
 ✅ Install OK
@@ -39,7 +50,7 @@ python tools/install_amem_eval/install.py --target /path/to/A-mem
 # macOS Homebrew Python 需要 --break-system-packages
 python tools/install_amem_eval/install.py --break-system-packages
 
-# 已经 clone 过、只想拷 shim + 装
+# 已经 clone 过、只想补 setup.py + 装
 python tools/install_amem_eval/install.py --no-clone
 ```
 
@@ -49,24 +60,21 @@ python tools/install_amem_eval/install.py --no-clone
 # 1. clone eval repo
 git clone https://github.com/WujiangXu/AgenticMemory.git ../A-mem
 
-# 2. 把 shim 复制进去(从 watermark 仓库根)
+# 2. 把 setup.py 复制进去(从 watermark 仓库根)
 cp tools/install_amem_eval/setup.py                 ../A-mem/
-mkdir -p                                              ../A-mem/agentic_memory
-cp tools/install_amem_eval/agentic_memory/__init__.py    ../A-mem/agentic_memory/
-cp tools/install_amem_eval/agentic_memory/memory_system.py ../A-mem/agentic_memory/
 
 # 3. 卸 SDK 装 eval
 pip uninstall -y agentic-memory
 pip install ../A-mem
 ```
 
+只有当 `../A-mem/memory_layer.py` 存在且 `../A-mem/agentic_memory/memory_system.py` 不存在时,才需要复制 `agentic_memory/` shim。
+
 ## Windows PowerShell 版
 
 ```powershell
 git clone https://github.com/WujiangXu/AgenticMemory.git ..\A-mem
 Copy-Item tools\install_amem_eval\setup.py                  ..\A-mem\
-New-Item -ItemType Directory -Force ..\A-mem\agentic_memory | Out-Null
-Copy-Item tools\install_amem_eval\agentic_memory\*.py       ..\A-mem\agentic_memory\
 pip uninstall -y agentic-memory
 pip install ..\A-mem
 ```
@@ -87,7 +95,31 @@ source: memory_layer
 raw: True
 ```
 
-如果 `source: agentic_memory.memory_system` —— 装的是 SDK,不是 eval。重跑安装。
+或:
+
+```
+source: agentic_memory.memory_system
+raw: True
+```
+
+判断标准只有一个: `raw: True`。
+
+## 修复已被旧脚本覆盖的 clone
+
+如果看到:
+
+```
+ModuleNotFoundError: No module named 'memory_layer'
+```
+
+说明旧脚本把新版 repo 的 `agentic_memory/memory_system.py` 覆盖成了旧 shim。修复方式:
+
+```powershell
+Remove-Item -Recurse -Force ..\A-mem
+python tools\install_amem_eval\install.py
+```
+
+如果你想保留 clone,也可以在 `..\A-mem` 内执行 `git restore agentic_memory\__init__.py agentic_memory\memory_system.py`,再重跑安装脚本。
 
 ## 为什么必须是 eval 版
 

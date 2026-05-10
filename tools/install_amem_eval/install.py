@@ -6,14 +6,14 @@ agiresearch/A-mem SDK is a clean extracted version that drops it. Our
 QA path needs ``_raw`` to match the paper's protocol, so we install
 from the eval repo.
 
-The eval repo isn't pip-installable out of the box (no setup.py).
+Some eval-repo revisions aren't pip-installable out of the box (no setup.py).
 This script:
 
   1. clones WujiangXu/AgenticMemory into a sibling directory of the
      watermark repo (configurable via --target),
-  2. drops a setup.py + a thin ``agentic_memory`` shim package on top
-     so ``from agentic_memory.memory_system import AgenticMemorySystem``
-     keeps working,
+  2. drops a setup.py on top and, only for old flat-layout revisions,
+     adds a thin ``agentic_memory`` shim package so
+     ``from agentic_memory.memory_system import AgenticMemorySystem`` keeps working,
   3. uninstalls any prior ``agentic-memory`` install,
   4. pip installs the eval repo.
 
@@ -36,7 +36,8 @@ from pathlib import Path
 
 
 REPO_URL = "https://github.com/WujiangXu/AgenticMemory.git"
-SHIM_FILES = ["setup.py", "agentic_memory/__init__.py", "agentic_memory/memory_system.py"]
+SETUP_FILE = "setup.py"
+SHIM_FILES = ["agentic_memory/__init__.py", "agentic_memory/memory_system.py"]
 
 
 def parse_args() -> argparse.Namespace:
@@ -64,6 +65,41 @@ def run(cmd: list[str]) -> None:
     subprocess.check_call(cmd)
 
 
+def copy_file(src_root: Path, dst_root: Path, rel: str) -> None:
+    src = src_root / rel
+    dst = dst_root / rel
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src, dst)
+    print(f"  copied {rel}")
+
+
+def install_packaging_files(src_root: Path, target: Path) -> None:
+    copy_file(src_root, target, SETUP_FILE)
+
+    flat_layout = (target / "memory_layer.py").exists()
+    package_layout = (target / "agentic_memory" / "memory_system.py").exists()
+    if flat_layout:
+        for rel in SHIM_FILES:
+            copy_file(src_root, target, rel)
+        return
+
+    if package_layout:
+        memory_system = target / "agentic_memory" / "memory_system.py"
+        text = memory_system.read_text(encoding="utf-8", errors="ignore")
+        if "from memory_layer import" in text:
+            print(
+                "ERROR: target agentic_memory/memory_system.py is a stale shim, "
+                "but memory_layer.py is absent."
+            )
+            print("Restore or reclone the target repo, then rerun this installer.")
+            raise SystemExit(1)
+        print("  native agentic_memory package detected; shim copy skipped")
+        return
+
+    print("ERROR: unsupported AgenticMemory layout: no memory_layer.py or agentic_memory/memory_system.py")
+    raise SystemExit(1)
+
+
 def main() -> int:
     args = parse_args()
     here = Path(__file__).resolve().parent
@@ -75,13 +111,7 @@ def main() -> int:
         print(f"ERROR: --no-clone given but {target} doesn't exist")
         return 1
 
-    # Copy shim files into the eval repo
-    for rel in SHIM_FILES:
-        src = here / rel
-        dst = target / rel
-        dst.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(src, dst)
-        print(f"  copied {rel}")
+    install_packaging_files(here, target)
 
     # Uninstall any prior agentic-memory
     pip_args_uninstall = [sys.executable, "-m", "pip", "uninstall", "-y", "agentic-memory"]

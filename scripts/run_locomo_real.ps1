@@ -7,12 +7,34 @@ param(
     [string]$AMemModelName = "C:\桌面\models\all-MiniLM-L6-v2",
     [string]$Output = ".\results\amem\conv0_real.json",
     [int]$MaxSessions = 5,
-    [int]$MaxQa = 50
+    [int]$MaxQa = 50,
+    [int]$AsyncMaxConcurrency = 4,
+    [switch]$NoAsyncAssess,
+    [switch]$NoClean
 )
+
+function Write-Step {
+    param([string]$Message)
+    Write-Host "› $Message"
+}
 
 if (-not $ApiKey) {
     throw "Set MEMMARK_API_KEY first or pass -ApiKey '<your OpenRouter key>'."
 }
+
+if (-not $NoClean) {
+    Clear-Host
+}
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
+$env:PYTHONIOENCODING = "utf-8"
+$env:AGENTMARK_DEBUG_SAMPLER = ""
+
+Write-Host ""
+Write-Host "MemMark LoCoMo"
+Write-Host "--------------"
+Write-Step "conv=$Conversation backend=$Backend model=$Model"
+Write-Step "sessions=$MaxSessions qa=$MaxQa async=$(-not $NoAsyncAssess)"
+Write-Step "output=$Output"
 
 $env:MEMMARK_API_KEY = $ApiKey
 $env:MEMMARK_BASE_URL = "https://openrouter.ai/api/v1"
@@ -31,16 +53,41 @@ if (-not (Test-Path $env:MEMMARK_LOCOMO_PATH)) {
     throw "LoCoMo file not found: $env:MEMMARK_LOCOMO_PATH"
 }
 
-New-Item -ItemType Directory -Force (Split-Path $Output) | Out-Null
+$OutputDir = Split-Path $Output
+if ($OutputDir) {
+    New-Item -ItemType Directory -Force $OutputDir | Out-Null
+}
 
-python -c "from memmark.llm import OpenAIChatClient; c=OpenAIChatClient(); print(c.model); print(c.complete([{'role':'user','content':'reply only ok'}], temperature=0))"
+Write-Step "checking LLM"
+python -c "from memmark.llm import OpenAIChatClient; c=OpenAIChatClient(); c.complete([{'role':'user','content':'ok'}], temperature=0); print('› llm=ok model=' + c.model)"
+if ($LASTEXITCODE -ne 0) {
+    throw "LLM client check failed with exit code $LASTEXITCODE"
+}
 
-python -m memmark.examples.run_locomo_full `
-    --locomo $env:MEMMARK_LOCOMO_PATH `
-    --conversation $Conversation `
-    --backend $Backend `
-    --amem-model-name $AMemModelName `
-    --llm-mode real `
-    --progress `
-    --baselines watermark no_watermark signed_metadata_only `
-    --output $Output
+$RunArgs = @(
+    "-m", "memmark.examples.run_locomo_full",
+    "--locomo", $env:MEMMARK_LOCOMO_PATH,
+    "--conversation", $Conversation,
+    "--backend", $Backend,
+    "--amem-model-name", $AMemModelName,
+    "--llm-mode", "real",
+    "--progress",
+    "--baselines", "watermark",
+    "--max-sessions", $MaxSessions,
+    "--max-qa", $MaxQa,
+    "--output", $Output
+)
+
+if (-not $NoAsyncAssess) {
+    $RunArgs += @("--async-assess", "--async-max-concurrency", $AsyncMaxConcurrency)
+}
+
+Write-Step "running"
+$started = Get-Date
+python @RunArgs
+$exitCode = $LASTEXITCODE
+$elapsed = (Get-Date) - $started
+Write-Step "done exit=$exitCode elapsed=$($elapsed.ToString())"
+if ($exitCode -ne 0) {
+    exit $exitCode
+}

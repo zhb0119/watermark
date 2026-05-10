@@ -14,10 +14,13 @@ We expose:
 
 from __future__ import annotations
 
+import contextlib
+import io
+import os
 import re
 from typing import Any, Dict, List, Optional
 
-from memmark.backends.base import MemoryBackendAdapter
+from memmark.backends.base import MemoryBackendAdapter, _string_topk
 
 try:  # real A-MEM SDK
     from agentic_memory.memory_system import AgenticMemorySystem  # type: ignore
@@ -113,8 +116,11 @@ class AMemBackend(MemoryBackendAdapter):
             # find_related_memories as `talk start time:<value>`. Pass
             # LoCoMo's session_date_time so QA-time retrieval sees the
             # canonical talk-time anchor (matches A-mem's intended usage).
-            note_id = self.system.add_note(
-                text, time=session_date_time or None, tags=tags
+            note_id = self._quiet_amem_call(
+                self.system.add_note,
+                text,
+                time=session_date_time or None,
+                tags=tags,
             )
             self._evidence[note_id] = {
                 "dia_ids": evidence,
@@ -131,7 +137,7 @@ class AMemBackend(MemoryBackendAdapter):
                 self.system.delete(target_id)
             except Exception:
                 pass
-            note_id = self.system.add_note(new_text)
+            note_id = self._quiet_amem_call(self.system.add_note, new_text)
             merged_evidence = list(
                 dict.fromkeys(
                     list(old_meta.get("dia_ids", [])) + evidence
@@ -162,10 +168,7 @@ class AMemBackend(MemoryBackendAdapter):
             related_str, ids = self.system.find_related_memories(query, k=k)
         except Exception:
             return []
-        out: List[Dict[str, Any]] = []
-        for note_id in ids:
-            out.append(self._fetch_record(str(note_id)))
-        return out
+        return self._records_from_ids(ids)
 
     # ----- watermark sampler injection ----- #
     def attach_sampler(self, sampler: Any) -> None:
@@ -244,43 +247,54 @@ class AMemBackend(MemoryBackendAdapter):
         llm_client: Any,
     ) -> Dict[str, Any]:
         from memmark.benchmarks.locomo.qa_eval import (
+            _default_render_memory,
             build_amem_keyword_prompt,
             build_cat_aware_qa_prompt,
+            parse_keywords_response,
+            parse_plain_text_answer,
         )
 
-        # Step 1: keyword extraction (test_advanced_robust.py:96-107)
         keywords = question
+        kw_raw = ""
         try:
             kw_raw = llm_client.complete(
                 [{"role": "user", "content": build_amem_keyword_prompt(question)}],
                 temperature=0.0,
             )
-            try:
-                import json as _json
-
-                parsed = _json.loads(_strip_code_fence(kw_raw))
-                kws = parsed.get("keywords")
-                if isinstance(kws, str) and kws.strip():
-                    keywords = kws.strip()
-            except Exception:
-                if isinstance(kw_raw, str) and kw_raw.strip():
-                    keywords = kw_raw.strip()
+            parsed_keywords = parse_keywords_response(kw_raw)
+            if parsed_keywords:
+                keywords = parsed_keywords
         except Exception:
             pass
 
-        # Step 2: raw retrieval (prefer find_related_memories_raw, fallback
-        # to formatted find_related_memories on older A-mem SDK builds)
         raw_context = ""
+        retrieval_error = ""
         try:
             if hasattr(self.system, "find_related_memories_raw"):
                 raw_context = self.system.find_related_memories_raw(keywords, k=k)
             else:
                 related_str, _ = self.system.find_related_memories(keywords, k=k)
                 raw_context = related_str or ""
-        except Exception:
+        except Exception as exc:
+            retrieval_error = f"{type(exc).__name__}: {exc}"
             raw_context = ""
 
-        # Step 3: cat-aware prompt + plain-text answer
+        retrieval_repair = False
+        if not raw_context.strip() and retrieval_error:
+            repaired_context = self._safe_find_related_memories_raw(keywords, k)
+            if repaired_context.strip():
+                raw_context = repaired_context
+                retrieval_repair = True
+
+        retrieval_fallback = False
+        if not isinstance(raw_context, str):
+            raw_context = str(raw_context or "")
+        if not raw_context.strip():
+            records = _string_topk(self.snapshot(), question, k)
+            if records:
+                raw_context = _default_render_memory(records)
+                retrieval_fallback = True
+
         user_prompt, temperature = build_cat_aware_qa_prompt(
             category, raw_context, question, gold_answer=gold_answer,
         )
@@ -290,7 +304,18 @@ class AMemBackend(MemoryBackendAdapter):
             )
         except Exception:
             answer = ""
-        return {"mode": "answer", "text": (answer or "").strip()}
+        return {
+            "mode": "answer",
+            "text": parse_plain_text_answer(answer),
+            "context": raw_context,
+            "context_chars": len(raw_context),
+            "keywords": keywords,
+            "keyword_raw": kw_raw,
+            "retrieval_error": retrieval_error,
+            "retrieval_repair": retrieval_repair,
+            "retrieval_fallback": retrieval_fallback,
+            "user_prompt": user_prompt,
+        }
 
     # -- internals ------------------------------------------------- #
     def _fetch_record(self, note_id: str) -> Dict[str, Any]:
@@ -314,3 +339,67 @@ class AMemBackend(MemoryBackendAdapter):
                 }
             )
         return base
+
+    @staticmethod
+    def _quiet_amem_call(func: Any, *args: Any, **kwargs: Any) -> Any:
+        if os.getenv("MEMMARK_DEBUG_AMEM"):
+            return func(*args, **kwargs)
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            return func(*args, **kwargs)
+
+    def _records_from_ids(self, ids: List[Any]) -> List[Dict[str, Any]]:
+        note_ids = list(self.system.memories.keys())
+        out: List[Dict[str, Any]] = []
+        for item in ids:
+            note_id = str(item)
+            idx = self._coerce_memory_index(item, len(note_ids))
+            if idx is not None:
+                note_id = note_ids[idx]
+            out.append(self._fetch_record(note_id))
+        return out
+
+    def _safe_find_related_memories_raw(self, query: str, k: int) -> str:
+        retriever = getattr(self.system, "retriever", None)
+        if retriever is None or not hasattr(retriever, "search"):
+            return ""
+        try:
+            indices = retriever.search(query, k)
+        except Exception:
+            return ""
+        all_memories = list(self.system.memories.values())
+        chunks: List[str] = []
+        for item in indices:
+            idx = self._coerce_memory_index(item, len(all_memories))
+            if idx is None:
+                continue
+            note = all_memories[idx]
+            chunks.append(self._format_raw_note(note))
+            for offset, neighbor in enumerate(list(getattr(note, "links", []) or [])):
+                if offset >= k:
+                    break
+                neighbor_idx = self._coerce_memory_index(neighbor, len(all_memories))
+                if neighbor_idx is not None:
+                    chunks.append(self._format_raw_note(all_memories[neighbor_idx]))
+        return "\n".join(chunks)
+
+    @staticmethod
+    def _coerce_memory_index(value: Any, size: int) -> Optional[int]:
+        if isinstance(value, int):
+            idx = value
+        elif isinstance(value, str) and value.isdigit():
+            idx = int(value)
+        else:
+            return None
+        if 0 <= idx < size:
+            return idx
+        return None
+
+    @staticmethod
+    def _format_raw_note(note: Any) -> str:
+        return (
+            "talk start time:" + str(getattr(note, "timestamp", ""))
+            + "memory content: " + str(getattr(note, "content", ""))
+            + "memory context: " + str(getattr(note, "context", ""))
+            + "memory keywords: " + str(getattr(note, "keywords", []))
+            + "memory tags: " + str(getattr(note, "tags", []))
+        )

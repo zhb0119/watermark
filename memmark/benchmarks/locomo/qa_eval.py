@@ -116,14 +116,40 @@ def build_amem_keyword_prompt(question: str) -> str:
     (test_advanced_robust.py:96-105)."""
 
     return (
-        "Given the following question, generate several keywords, using "
-        "'cosmos' as the separator.\n\n"
+        "Given the following question, generate several keywords separated "
+        "by commas.\n\n"
         f"Question: {question}\n\n"
-        "Format your response as a JSON object with a \"keywords\" field "
-        "containing the selected text.\n\n"
-        "Example response format:\n"
-        "{\"keywords\": \"keyword1, keyword2, keyword3\"}"
+        "Keywords:"
     )
+
+
+def parse_plain_text_answer(response: str) -> str:
+    try:
+        cleaned = _strip_markdown_fences(response)
+        data = json.loads(cleaned)
+        if isinstance(data, dict) and "answer" in data:
+            return str(data["answer"]).strip()
+    except Exception:
+        pass
+    return (response or "").strip()
+
+
+def parse_keywords_response(response: str) -> str:
+    try:
+        cleaned = _strip_markdown_fences(response)
+        data = json.loads(cleaned)
+        if isinstance(data, dict) and "keywords" in data:
+            return str(data["keywords"]).strip()
+    except Exception:
+        pass
+    return (response or "").strip()
+
+
+def _strip_markdown_fences(text: str) -> str:
+    text = (text or "").strip()
+    text = re.sub(r"^```(?:json)?\s*\n?", "", text, flags=re.MULTILINE)
+    text = re.sub(r"\n?\s*```$", "", text, flags=re.MULTILINE)
+    return text.strip()
 
 
 # ----- normalization + F1 (LoCoMo evaluation.py) --------------------- #
@@ -364,7 +390,7 @@ def make_locomo_qa_responder(
     def responder(question, context_text) -> str:
         trace = build_locomo_qa_trace(
             question,
-            snapshot,
+            context_text,
             max_chars=max_chars,
         )
         setattr(responder, "last_trace", trace)

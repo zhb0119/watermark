@@ -154,7 +154,8 @@ python -m memmark.examples.run_locomo_full \
     --locomo "$MEMMARK_LOCOMO_PATH" \
     --conversation 0 \
     --backend amem \
-    --llm-mode real --async-assess \
+    --llm-mode real \
+    --async-assess --async-max-concurrency 4 \
     --baselines watermark no_watermark signed_metadata_only \
     --output ./results/amem_conv0_real.json
 ```
@@ -174,7 +175,8 @@ for i in $(seq 0 9); do
         --locomo "$MEMMARK_LOCOMO_PATH" \
         --conversation $i \
         --backend amem \
-        --llm-mode real --async-assess \
+        --llm-mode real \
+        --async-assess --async-max-concurrency 4 \
         --baselines watermark no_watermark signed_metadata_only random_replace \
         --output ./results/amem/conv${i}.json
 done
@@ -242,7 +244,8 @@ python -m memmark.examples.run_locomo_full \
     --max-sessions 1 \
     --max-qa 5 \
     --backend graphiti \
-    --llm-mode real --async-assess \
+    --llm-mode real \
+    --async-assess --async-max-concurrency 4 \
     --baselines watermark \
     --output ./results/graphiti_smoke.json
 ```
@@ -257,7 +260,8 @@ for i in $(seq 0 9); do
         --locomo "$MEMMARK_LOCOMO_PATH" \
         --conversation $i \
         --backend graphiti \
-        --llm-mode real --async-assess \
+        --llm-mode real \
+        --async-assess --async-max-concurrency 4 \
         --baselines watermark no_watermark signed_metadata_only \
         --output ./results/graphiti/conv${i}.json
 done
@@ -319,7 +323,7 @@ Fast 预算(单 cell ~ 30 QA × 3 sessions ≈ ~110 LLM 调用):
 
 ### 5.2 Full LoCoMo grid(paper main table;10 conv × 全 sessions × 全 QA + real mode)
 
-适用:跑出能放进论文 §10 主表的数字。**两个关键:`--llm-mode real --async-assess`** 与 **不传 `--max-sessions` / `--max-qa`**(driver 默认走全 LoCoMo)。
+适用:跑出能放进论文 §10 主表的数字。**关键:`--llm-mode real --async-assess`** 与 **不传 `--max-sessions` / `--max-qa`**(driver 默认走全 LoCoMo)。
 
 ```bash
 mkdir -p ./results/grid_full
@@ -332,7 +336,8 @@ for backend in json amem graphiti; do
             --locomo "$MEMMARK_LOCOMO_PATH" \
             --conversation $i \
             --backend $backend \
-            --llm-mode real --async-assess \
+            --llm-mode real \
+            --async-assess --async-max-concurrency 4 \
             --baselines watermark no_watermark signed_metadata_only random_replace \
             --output $out 2>&1 | tee ./results/grid_full/${backend}_conv${i}.log
     done
@@ -365,7 +370,8 @@ parallel -j 4 \
     "python -m memmark.examples.run_locomo_full \
         --locomo $MEMMARK_LOCOMO_PATH \
         --conversation {1} --backend {2} \
-        --llm-mode real --async-assess \
+        --llm-mode real \
+        --async-assess --async-max-concurrency 4 \
         --baselines watermark no_watermark signed_metadata_only random_replace \
         --output ./results/grid_full/{2}_conv{1}.json \
         > ./results/grid_full/{2}_conv{1}.log 2>&1" \
@@ -384,7 +390,8 @@ for i in $(seq 0 4); do
         --locomo "$MEMMARK_LOCOMO_PATH" \
         --conversation $i \
         --backend amem \
-        --llm-mode real --async-assess \
+        --llm-mode real \
+        --async-assess --async-max-concurrency 4 \
         --baselines watermark signed_metadata_only \
         --output ./results/mid_amem_conv${i}.json
 done
@@ -523,13 +530,17 @@ done
 | `qa_accuracy = 0` 一直 | stub mode default substring judge 太弱;真测时改 `--llm-mode real` 用 LoCoMo 官方 F1 | 切 real mode 才有意义 |
 | `evidence_recall_mean = 0` | dia_id 没串到 record。检查 backend.apply 的 record 里有没有 `dia_ids` 字段 | 4 个 backend 在 P2 #4 后都已支持;若仍为 0,看是不是用了旧版本 |
 | real mode `RuntimeError: Set MEMMARK_API_KEY...` | 没设 LLM 凭据 | 见 §0.7,设 3 个 env(`MEMMARK_API_KEY` / `MEMMARK_BASE_URL` / `MEMMARK_MODEL`) |
-| real mode 跑得很慢 | 串行 LLM 调用;开 `--async-assess` + 见 §11 加速 | `--async-assess` 立刻 ~2x;再叠 §11.3 multi-provider 再 2x |
+| real mode 跑得很慢 | ingest/evolve 必须串行;最终 QA assessment 可并发 | 开 `--async-assess --async-max-concurrency 4`,再用 §11.4 多 conv 进程并行 |
 
 ---
 
-## 11. 加速 —— 把单 cell 时长从 4 hr 砍到 < 1 hr
+## 11. 加速 —— 安全并发边界
 
-瓶颈不是 batch_size(我们没在 train),是 **每个 evolve 决策默认要串行 5 次 LLM 调用**(extract → assess × 3 carrier → generate → score)。三件互相叠加的事:
+`memmark.examples.run_locomo_full` 支持 `--async-assess`。它只并发最终 QA assessment,不并发 ingestion/evolve。
+
+瓶颈不是 batch_size(我们没在 train),而是 LLM 调用等待。安全边界:
+- ingestion/evolve 必须串行: memory state、watermark bit index、Merkle audit 都有顺序依赖。
+- final QA assessment 可并发: memory snapshot 已固定,每个问题只读检索 + 回答 + 打分。
 
 ### 11.1 合并 generate + score(默认已开,~30% 加速)
 
@@ -542,28 +553,26 @@ from memmark.carriers.planner import LLMCarrierPlanner
 planner = LLMCarrierPlanner(client, fallback_carrier=..., merge_gen_and_score=False)
 ```
 
-### 11.2 Async carrier assess fan-out(~2× 加速)
+### 11.2 Async QA assessment fan-out(当前 CLI 已支持)
 
-把 3 类 carrier feasibility 评估**并行**发出去。
+把最终 QA 问题并发评估。A-MEM robust QA 每题仍保持 `keyword → raw retrieval → cat-aware answer` 协议;只是多题并发。
 
-```python
-from memmark.llm import AsyncOpenAIChatClient
-from memmark.carriers.planner import LLMCarrierPlanner
-from memmark.carriers.semantic_realization import SemanticRealizationCarrier
-
-async_client = AsyncOpenAIChatClient(max_concurrency=8)
-planner = LLMCarrierPlanner(
-    async_client,
-    fallback_carrier=SemanticRealizationCarrier(),
-    async_assess=True,        # ← key flag
-)
+```bash
+python -m memmark.examples.run_locomo_full \
+    --locomo "$MEMMARK_LOCOMO_PATH" \
+    --conversation 0 \
+    --backend amem \
+    --llm-mode real \
+    --async-assess --async-max-concurrency 4 \
+    --baselines watermark no_watermark signed_metadata_only \
+    --output ./results/amem_conv0_real.json
 ```
 
-要求 client 实现 `complete_many`。`AsyncOpenAIChatClient` 与 `MultiProviderClient(async_mode=True)` 都满足。
+`--async-max-concurrency` 建议 2–8;遇到 rate limit 就降到 2。
 
-### 11.3 多 provider 并发(~1.5–2× 加速,绕过单 provider rate limit)
+### 11.3 多 provider 并发(历史设计;当前 CLI 未暴露)
 
-请求 round-robin 派给多个 OpenAI-compatible endpoint。**注意:论文实验的单条 trace 必须钉死一个 LLM**(否则 `watermark_version` mismatch),所以多 provider 只用于 *无 paper claim* 的开发 / debug / 加速 baseline 跑批。
+旧版设计可把请求 round-robin 派给多个 OpenAI-compatible endpoint。**注意:论文实验的单条 trace 必须钉死一个 LLM**(否则 `watermark_version` mismatch),所以多 provider 只用于 *无 paper claim* 的开发 / debug / 加速 baseline 跑批。
 
 ```python
 from memmark.llm import MultiProviderClient
@@ -638,12 +647,10 @@ class CachedClient:
 
 | 优化 | 单 cell 时长 | 全网格(40 cell) wall time |
 |------|------------|------------------------|
-| 默认(全部串行,无优化) | ~30 min | ~20 hr |
-| §11.1 merge gen+score | ~22 min | ~15 hr |
-| §11.1 + §11.2 async assess | ~12 min | ~8 hr |
-| §11.1 + §11.2 + §11.3 multi-provider(2 keys) | ~6 min | ~4 hr |
-| 全部 + §11.4 4-way 进程并行 | ~6 min × 1/4 | **~1 hr** |
-| 加 §11.5 缓存(同一 conv 重跑) | ~1 min | ~30 min |
+| 默认(ingest/evolve 串行 + QA 串行) | ~30 min | ~20 hr |
+| §11.2 async QA assessment | 取决于 QA 占比 | 取决于 QA 占比 |
+| §11.4 4-way 进程并行 | ~30 min × 1/4 | ~5 hr |
+| §11.5 缓存(同一 conv 重跑) | 取决于缓存命中率 | 取决于缓存命中率 |
 
 ---
 

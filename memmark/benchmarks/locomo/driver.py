@@ -25,6 +25,8 @@ LoCoMo-official QA prompt + F1 judge against the final snapshot.
 from __future__ import annotations
 
 import math
+import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 
@@ -121,6 +123,43 @@ class LoCoMoDriverResult:
         return sum(q.get(key, 0.0) for q in self.qa_predictions) / len(self.qa_predictions)
 
 
+def _progress_bar(current: int, total: int, width: int = 18) -> str:
+    if total <= 0:
+        return "[" + "-" * width + "]"
+    current = max(0, min(current, total))
+    filled = int(width * current / total)
+    return "[" + "#" * filled + "-" * (width - filled) + f"] {current}/{total}"
+
+
+class _ProgressPrinter:
+    def __init__(self, enabled: bool) -> None:
+        self.enabled = enabled
+        self._last_len = 0
+        self._line_open = False
+
+    def update(self, message: str) -> None:
+        if not self.enabled:
+            return
+        text = "\r" + message
+        pad = " " * max(0, self._last_len - len(message))
+        sys.stdout.write(text + pad)
+        sys.stdout.flush()
+        self._last_len = len(message)
+        self._line_open = True
+
+    def line(self, message: str = "") -> None:
+        if not self.enabled:
+            return
+        if self._line_open:
+            pad = " " * max(0, self._last_len - len(message))
+            sys.stdout.write("\r" + message + pad + "\n")
+            sys.stdout.flush()
+        else:
+            print(message, flush=True)
+        self._last_len = 0
+        self._line_open = False
+
+
 class LoCoMoDriver:
     """Replay a single LoCoMo conversation through a MemoryWatermarker.
 
@@ -140,7 +179,10 @@ class LoCoMoDriver:
         max_qa: Optional[int] = None,
         max_turns_per_session: Optional[int] = None,
         fact_extractor_llm: Optional[Any] = None,
+        async_assess: bool = False,
+        async_max_concurrency: int = 4,
         progress: bool = False,
+        progress_context: Optional[Dict[str, Any]] = None,
         # Backwards-compat: accept the deprecated `memory_extractor`
         # kwarg but ignore it.
         memory_extractor: Optional[Any] = None,
@@ -153,7 +195,15 @@ class LoCoMoDriver:
         self.max_qa = max_qa
         self.max_turns_per_session = max_turns_per_session
         self.fact_extractor_llm = fact_extractor_llm
+        self.async_assess = bool(async_assess)
+        self.async_max_concurrency = max(1, int(async_max_concurrency))
         self.progress = progress
+        self.progress_context = progress_context or {}
+        self._progress = _ProgressPrinter(self.progress)
+        self._active_session_i = 0
+        self._active_session_count = 0
+        self._active_conversation = self.progress_context.get("conversation", "")
+        self._active_baseline = self.progress_context.get("baseline", "")
         # We intentionally ignore memory_extractor — backend is the
         # source of truth for what becomes a memory record.
         self._legacy_extractor_warned = bool(memory_extractor)
@@ -169,24 +219,33 @@ class LoCoMoDriver:
 
         ingestion_mode = getattr(self.wm.backend, "preferred_ingestion_mode", "turn")
         recent_dialog_ids: List[str] = []
-        if self.progress:
-            print(
-                f"[locomo] sample={conversation.sample_id} "
-                f"sessions={len(sessions)} ingestion={ingestion_mode}",
-                flush=True,
-            )
+        qa_list = conversation.qa
+        if self.max_qa is not None:
+            qa_list = qa_list[: self.max_qa]
+        total_turns = 0
+        for session in sessions:
+            turns = session.turns
+            if self.max_turns_per_session is not None:
+                turns = turns[: self.max_turns_per_session]
+            total_turns += len(turns)
+        self._progress.line(
+            f"[start] baseline={self._active_baseline} conversation={self._active_conversation} "
+            f"sample={conversation.sample_id} sessions={len(sessions)} turns={total_turns} "
+            f"qa={len(qa_list)} ingestion={ingestion_mode}"
+        )
         for session_i, session in enumerate(sessions, start=1):
+            self._active_session_i = session_i
+            self._active_session_count = len(sessions)
             turns = session.turns
             if self.max_turns_per_session is not None:
                 turns = turns[: self.max_turns_per_session]
             events_before = len(result.extracted_events)
             audits_before = len(result.audits)
-            if self.progress:
-                print(
-                    f"[session {session_i}/{len(sessions)}] "
-                    f"session_index={session.index} date={session.date_time} turns={len(turns)}",
-                    flush=True,
-                )
+            self._progress.line(
+                f"[session] conversation={self._active_conversation} "
+                f"{_progress_bar(session_i, len(sessions), 12)} "
+                f"session_id={session.index} turns={len(turns)}"
+            )
             if ingestion_mode == "session":
                 self._ingest_session_mode(
                     conversation, session, turns, result, recent_dialog_ids
@@ -199,44 +258,85 @@ class LoCoMoDriver:
                 self._ingest_turn_mode(
                     conversation, session, turns, result, recent_dialog_ids
                 )
-            if self.progress:
-                print(
-                    f"[session {session_i}/{len(sessions)}:done] "
-                    f"events={len(result.extracted_events) - events_before} "
-                    f"llm_calls={len(result.audits) - audits_before} "
-                    f"recent_dialog_ids={recent_dialog_ids}",
-                    flush=True,
-                )
+            self._progress.line(
+                f"[session done] conversation={self._active_conversation} "
+                f"session={session_i}/{len(sessions)} "
+                f"events+={len(result.extracted_events) - events_before} "
+                f"llm+={len(result.audits) - audits_before} "
+                f"total_events={len(result.extracted_events)} bits={result.bits_embedded_total}"
+            )
 
-        if self.progress:
-            print("[locomo] sealing session", flush=True)
+        self._progress.line("[seal] finalizing watermark anchor")
         result.anchor = self.wm.seal_session()
-        if self.progress:
-            print("[locomo] reading final memory snapshot", flush=True)
+        self._progress.line("[snapshot] reading final memory state")
         result.memory_snapshot_final = self.wm.backend.snapshot()
         result.capacity_stats = _capacity_stats(result.audits, result.decisions)
 
-        qa_list = conversation.qa
-        if self.max_qa is not None:
-            qa_list = qa_list[: self.max_qa]
-        if self.progress:
-            print(
-                f"[qa:start] questions={len(qa_list)} "
-                f"memory_records={len(result.memory_snapshot_final)}",
-                flush=True,
-            )
-        for qa_i, q in enumerate(qa_list, start=1):
-            if self.progress:
-                print(
-                    f"[qa:{qa_i}/{len(qa_list)}:question] "
-                    f"category={q.category} evidence={q.evidence} text={q.question}",
-                    flush=True,
+        self._progress.line(
+            f"[qa] questions={len(qa_list)} memory_records={len(result.memory_snapshot_final)}"
+        )
+        if self.async_assess and len(qa_list) > 1:
+            try:
+                result.qa_predictions.extend(self._run_qa_parallel(qa_list, result))
+            except Exception as exc:
+                self._progress.line(f"[qa fallback] {type(exc).__name__}: {exc}")
+                for qa_i, q in enumerate(qa_list, start=1):
+                    result.qa_predictions.append(
+                        self._run_one_qa(q, qa_i, len(qa_list), result)
+                    )
+                    self._progress.update(
+                        f"[qa] {_progress_bar(qa_i, len(qa_list))} "
+                        f"f1_mean={result.qa_f1_mean:.3f}"
+                    )
+        else:
+            for qa_i, q in enumerate(qa_list, start=1):
+                result.qa_predictions.append(
+                    self._run_one_qa(q, qa_i, len(qa_list), result)
                 )
-            # Per-backend canonical retrieval / QA. qa_context returns
-            # either mode=context (rendered memory text — driver wraps
-            # in LoCoMo QA prompt) or mode=answer (backend ran its own
-            # full official QA protocol, e.g. A-mem robust with
-            # cat-aware prompts).
+                self._progress.update(
+                    f"[qa] {_progress_bar(qa_i, len(qa_list))} "
+                    f"f1_mean={result.qa_f1_mean:.3f}"
+                )
+        self._progress.line(
+            f"[done] f1={result.qa_f1_mean:.3f} bleu1={result.qa_bleu1_mean:.3f} "
+            f"rougeL={result.qa_rougeL_mean:.3f} judge_acc={result.qa_judge_accuracy:.3f}"
+        )
+        return result
+
+    def _run_qa_parallel(
+        self,
+        qa_list: List[LoCoMoQuestion],
+        result: LoCoMoDriverResult,
+    ) -> List[Dict[str, Any]]:
+        workers = min(self.async_max_concurrency, len(qa_list))
+        self._progress.line(f"[qa async] workers={workers}")
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            futures = {
+                executor.submit(self._run_one_qa, q, qa_i, len(qa_list), result): (qa_i, q)
+                for qa_i, q in enumerate(qa_list, start=1)
+            }
+            out = []
+            completed = 0
+            for future in as_completed(futures):
+                qa_i, q = futures[future]
+                try:
+                    out.append(future.result())
+                except Exception as exc:
+                    out.append(self._qa_error_record(qa_i, q, result, exc))
+                completed += 1
+                self._progress.update(
+                    f"[qa async] {_progress_bar(completed, len(qa_list))}"
+                )
+            return sorted(out, key=lambda item: int(item.get("index", 0)))
+
+    def _run_one_qa(
+        self,
+        q: LoCoMoQuestion,
+        qa_i: int,
+        qa_count: int,
+        result: LoCoMoDriverResult,
+    ) -> Dict[str, Any]:
+        try:
             ctx = self.wm.backend.qa_context(
                 q.question,
                 k=10,
@@ -246,58 +346,77 @@ class LoCoMoDriver:
             )
             if ctx.get("mode") == "answer":
                 answer = (ctx.get("text") or "").strip()
-                qa_trace = {"context": "", "context_chars": 0, "mode": "answer"}
+                context_text = ctx.get("context") or ""
+                qa_trace = {
+                    "context": context_text,
+                    "context_chars": len(context_text),
+                    "mode": "answer",
+                    "keywords": ctx.get("keywords", ""),
+                    "keyword_raw": ctx.get("keyword_raw", ""),
+                    "retrieval_error": ctx.get("retrieval_error", ""),
+                    "retrieval_fallback": bool(ctx.get("retrieval_fallback")),
+                    "user_prompt": ctx.get("user_prompt", ""),
+                    "raw_response": answer,
+                }
             else:
                 context_text = ctx.get("text") or ""
                 answer = self.qa_responder(q, context_text)
-                qa_trace = getattr(self.qa_responder, "last_trace", None)
-                if not isinstance(qa_trace, dict):
-                    qa_trace = build_locomo_qa_trace(q, result.memory_snapshot_final)
-            f1 = score_one(answer, q.answer, q.category)
-            bleu = bleu1(answer, q.answer)
-            rouge = rouge_l(answer, q.answer)
-            correct = bool(self.qa_judge(q, answer))
-            evidence_recall = _evidence_recall(q, result.memory_snapshot_final)
-            if self.progress:
-                print(
-                    f"[qa:{qa_i}/{len(qa_list)}:answer] "
-                    f"context_chars={qa_trace.get('context_chars')} answer={answer}",
-                    flush=True,
-                )
-                print(
-                    f"[qa:{qa_i}/{len(qa_list)}:score] "
-                    f"gold={q.answer} f1={f1:.3f} bleu1={bleu:.3f} "
-                    f"rougeL={rouge:.3f} judge_correct={correct} "
-                    f"evidence_recall={evidence_recall:.3f}",
-                    flush=True,
-                )
-            result.qa_predictions.append(
-                {
-                    "index": qa_i,
-                    "question": q.question,
-                    "answer_gold": q.answer,
-                    "answer_pred": answer,
-                    "category": q.category,
-                    "evidence": q.evidence,
-                    "f1": f1,
-                    "bleu1": bleu,
-                    "rougeL": rouge,
-                    "judge_correct": correct,
-                    "correct": correct,  # backwards-compat alias
-                    "evidence_recall": evidence_recall,
-                    "memory_record_count": len(result.memory_snapshot_final),
-                    "qa_trace": qa_trace,
-                }
-            )
-        if self.progress:
-            print(
-                f"[qa:done] f1_mean={result.qa_f1_mean:.3f} "
-                f"bleu1_mean={result.qa_bleu1_mean:.3f} "
-                f"rougeL_mean={result.qa_rougeL_mean:.3f} "
-                f"judge_acc={result.qa_judge_accuracy:.3f}",
-                flush=True,
-            )
-        return result
+                qa_trace = build_locomo_qa_trace(q, context_text)
+                qa_trace["raw_response"] = answer
+        except Exception as exc:
+            return self._qa_error_record(qa_i, q, result, exc)
+
+        f1 = score_one(answer, q.answer, q.category)
+        bleu = bleu1(answer, q.answer)
+        rouge = rouge_l(answer, q.answer)
+        correct = bool(self.qa_judge(q, answer))
+        evidence_recall = _evidence_recall(q, result.memory_snapshot_final)
+        return {
+            "index": qa_i,
+            "question": q.question,
+            "answer_gold": q.answer,
+            "answer_pred": answer,
+            "category": q.category,
+            "evidence": q.evidence,
+            "f1": f1,
+            "bleu1": bleu,
+            "rougeL": rouge,
+            "judge_correct": correct,
+            "correct": correct,
+            "evidence_recall": evidence_recall,
+            "memory_record_count": len(result.memory_snapshot_final),
+            "qa_trace": qa_trace,
+        }
+
+    def _qa_error_record(
+        self,
+        qa_i: int,
+        q: LoCoMoQuestion,
+        result: LoCoMoDriverResult,
+        exc: Exception,
+    ) -> Dict[str, Any]:
+        qa_trace = {
+            "context": "",
+            "context_chars": 0,
+            "mode": "error",
+            "error": f"{type(exc).__name__}: {exc}",
+        }
+        return {
+            "index": qa_i,
+            "question": q.question,
+            "answer_gold": q.answer,
+            "answer_pred": "",
+            "category": q.category,
+            "evidence": q.evidence,
+            "f1": 0.0,
+            "bleu1": 0.0,
+            "rougeL": 0.0,
+            "judge_correct": False,
+            "correct": False,
+            "evidence_recall": _evidence_recall(q, result.memory_snapshot_final),
+            "memory_record_count": len(result.memory_snapshot_final),
+            "qa_trace": qa_trace,
+        }
 
     def _ingest_turn_mode(
         self,
@@ -317,22 +436,21 @@ class LoCoMoDriver:
         total_turns = len(turns)
         for turn_i, turn in enumerate(turns, start=1):
             if not self.turn_filter(turn, session.summary):
-                if self.progress:
-                    print(
-                        f"[turn:{session.index}:{turn_i}/{total_turns}:skip] "
-                        f"dia_id={turn.dia_id} speaker={turn.speaker}",
-                        flush=True,
-                    )
+                self._progress.update(
+                    f"[turn skip] conversation={self._active_conversation} "
+                    f"session={self._active_session_i}/{self._active_session_count} "
+                    f"{_progress_bar(turn_i, total_turns)} dia={turn.dia_id}"
+                )
                 continue
             recent_dialog_ids[:] = (recent_dialog_ids + [turn.dia_id])[-8:]
             event_text = _format_turn(turn, session.date_time)
-            if self.progress:
-                preview = turn.text.replace("\n", " ")[:180]
-                print(
-                    f"[turn:{session.index}:{turn_i}/{total_turns}:ingest] "
-                    f"dia_id={turn.dia_id} speaker={turn.speaker} text={preview}",
-                    flush=True,
-                )
+            self._progress.update(
+                f"[turn] conversation={self._active_conversation} "
+                f"session={self._active_session_i}/{self._active_session_count} "
+                f"{_progress_bar(turn_i, total_turns)} dia={turn.dia_id} "
+                f"events={len(result.extracted_events)} llm={len(result.audits)} "
+                f"bits={result.bits_embedded_total}"
+            )
             self._evolve_one(
                 event_text,
                 dia_ids=[turn.dia_id],
@@ -343,6 +461,13 @@ class LoCoMoDriver:
                 result=result,
                 source_label=f"{turn.dia_id}",
                 progress_label=f"turn:{session.index}:{turn.dia_id}",
+            )
+            self._progress.update(
+                f"[turn] conversation={self._active_conversation} "
+                f"session={self._active_session_i}/{self._active_session_count} "
+                f"{_progress_bar(turn_i, total_turns)} dia={turn.dia_id} "
+                f"events={len(result.extracted_events)} llm={len(result.audits)} "
+                f"bits={result.bits_embedded_total}"
             )
 
     def _ingest_session_mode(
@@ -362,17 +487,14 @@ class LoCoMoDriver:
 
         kept = [t for t in turns if self.turn_filter(t, session.summary)]
         if not kept:
-            if self.progress:
-                print(f"[session:{session.index}:skip] no kept turns", flush=True)
+            self._progress.line(f"[session skip] session_id={session.index} no kept turns")
             return
         body = _format_session_text(session, kept)
         all_dia_ids = [t.dia_id for t in kept]
-        if self.progress:
-            print(
-                f"[session:{session.index}:ingest] "
-                f"kept_turns={len(kept)} dia_ids={all_dia_ids}",
-                flush=True,
-            )
+        self._progress.update(
+            f"[session ingest] conversation={self._active_conversation} "
+            f"session={self._active_session_i}/{self._active_session_count} kept_turns={len(kept)}"
+        )
         recent_dialog_ids[:] = (recent_dialog_ids + all_dia_ids)[-8:]
         self._evolve_one(
             body,
@@ -403,12 +525,8 @@ class LoCoMoDriver:
 
         kept = [t for t in turns if self.turn_filter(t, session.summary)]
         if not kept or self.fact_extractor_llm is None:
-            if self.progress:
-                reason = "no_kept_turns" if not kept else "no_fact_extractor_llm"
-                print(
-                    f"[extract:{session.index}:fallback] reason={reason} mode=turn",
-                    flush=True,
-                )
+            reason = "no_kept_turns" if not kept else "no_fact_extractor_llm"
+            self._progress.line(f"[extract fallback] session_id={session.index} reason={reason}")
             self._ingest_turn_mode(
                 conversation, session, kept, result, recent_dialog_ids
             )
@@ -416,12 +534,10 @@ class LoCoMoDriver:
 
         from memmark.extractors import extract_session_facts
 
-        if self.progress:
-            print(
-                f"[extract:{session.index}:start] "
-                f"turns={len(kept)} speakers={conversation.speaker_a},{conversation.speaker_b}",
-                flush=True,
-            )
+        self._progress.update(
+            f"[extract] conversation={self._active_conversation} "
+            f"session={self._active_session_i}/{self._active_session_count} turns={len(kept)}"
+        )
         facts = extract_session_facts(
             llm_client=self.fact_extractor_llm,
             speaker_a=conversation.speaker_a,
@@ -432,25 +548,19 @@ class LoCoMoDriver:
         )
 
         if not facts:
-            if self.progress:
-                print(
-                    f"[extract:{session.index}:fallback] reason=no_facts mode=turn",
-                    flush=True,
-                )
+            self._progress.line(f"[extract fallback] session_id={session.index} reason=no_facts")
             self._ingest_turn_mode(
                 conversation, session, kept, result, recent_dialog_ids
             )
             return
 
-        if self.progress:
-            print(f"[extract:{session.index}:done] facts={len(facts)}", flush=True)
+        self._progress.line(f"[extract done] session_id={session.index} facts={len(facts)}")
         for fact_i, fact in enumerate(facts, start=1):
-            if self.progress:
-                print(
-                    f"[fact:{session.index}:{fact_i}/{len(facts)}] "
-                    f"speaker={fact.speaker} dia_ids={fact.dia_ids} text={fact.text}",
-                    flush=True,
-                )
+            self._progress.update(
+                f"[fact] conversation={self._active_conversation} "
+                f"session={self._active_session_i}/{self._active_session_count} "
+                f"{_progress_bar(fact_i, len(facts))} events={len(result.extracted_events)}"
+            )
             recent_dialog_ids[:] = (recent_dialog_ids + fact.dia_ids)[-8:]
             self._evolve_one(
                 fact.as_event_text(),
@@ -478,13 +588,6 @@ class LoCoMoDriver:
         progress_label: Optional[str] = None,
     ) -> None:
         label = progress_label or source_label
-        if self.progress:
-            preview = event_text.replace("\n", " ")[:240]
-            print(
-                f"[evolve:{label}:start] session={session_index} "
-                f"speaker={speaker} dia_ids={dia_ids} text={preview}",
-                flush=True,
-            )
         # Native LLM-hook architecture: watermark bits are embedded
         # inside backend.apply() via SDK-internal LLM-call interception.
         # Driver hands the event text to backend.apply, audits accumulate
@@ -509,11 +612,7 @@ class LoCoMoDriver:
         try:
             record = self.wm.backend.apply(operation)
         except Exception as exc:
-            if self.progress:
-                print(
-                    f"[evolve:{label}:fail] reason={exc.__class__.__name__}",
-                    flush=True,
-                )
+            self._progress.line(f"[apply failed] source={label} reason={exc.__class__.__name__}")
             result.extracted_events.append(
                 {
                     "session": session_index,
@@ -551,14 +650,6 @@ class LoCoMoDriver:
         # extracted event (one event can trigger multiple SDK-internal
         # LLM calls → multiple audits; we summarize via the last one).
         last_audit = new_audits[-1] if new_audits else None
-        if self.progress:
-            print(
-                f"[evolve:{label}:done] llm_calls={len(new_audits)} "
-                f"bits={bits_for_event} "
-                f"last_tau={audit.tau if audit else ''} "
-                f"record_id={record.get('id') if isinstance(record, dict) else ''}",
-                flush=True,
-            )
         result.extracted_events.append(
             {
                 "session": session_index,

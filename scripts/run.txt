@@ -1,6 +1,6 @@
 $env:MEMMARK_BASE_URL = "https://openrouter.ai/api/v1"
-$env:MEMMARK_MODEL = "deepseek/deepseek-chat"
-$env:MEMMARK_API_KEY = "<your-new-key>"
+$env:MEMMARK_MODEL = "minimax/minimax-m2.5:free"
+$env:MEMMARK_API_KEY = "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"
 
 $env:OPENAI_BASE_URL = $env:MEMMARK_BASE_URL
 $env:OPENAI_API_KEY = $env:MEMMARK_API_KEY
@@ -14,9 +14,11 @@ $env:MEMMARK_LOCOMO_PATH = "C:\桌面\agent-mem\watermark\locomo\data\locomo10.j
 
 python -c "import os; print(os.getenv('MEMMARK_MODEL')); print(os.getenv('OPENAI_MODEL')); print(bool(os.getenv('OPENAI_API_KEY')))"
 
+conda activate memmark-amem
+
 python -m memmark.examples.run_locomo_full `
     --locomo $env:MEMMARK_LOCOMO_PATH `
-    --conversation 4 `
+    --conversation 1 `
     --backend amem `
     --llm-mode real `
     --progress `
@@ -24,4 +26,4 @@ python -m memmark.examples.run_locomo_full `
     --max-sessions 999 `
     --max-qa 9999 `
     --baselines watermark no_watermark signed_metadata_only random_replace `
-    --output ".\results\amem_full\conv4.json"
+    --output ".\results\amem_full\conv1.json"

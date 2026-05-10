@@ -95,14 +95,10 @@ def build_cat_aware_qa_prompt(
         prompt = (
             f"Based on the context: {context}, answer the following "
             f"question. Use DATE of CONVERSATION to answer with an "
-            f"approximate absolute date or year. Do not answer with "
-            f"relative time expressions such as yesterday, today, tomorrow, "
-            f"last year, next year, last month, or next month; convert them "
-            f"using the conversation date.\nPlease generate the shortest "
-            f"possible answer and avoid using any subjects. Output only the "
-            f"answer text; do not include labels, prefixes, or phrases such "
-            f"as Short answer.\n\n"
-            f"Question: {question}\nAnswer:"
+            f"approximate date.\nPlease generate the shortest possible "
+            f"answer, using words from the conversation where possible, "
+            f"and avoid using any subjects.\n\n"
+            f"Question: {question} Short answer:"
         )
         return prompt, 0.7
     # cat 3, default 1/4
@@ -120,14 +116,40 @@ def build_amem_keyword_prompt(question: str) -> str:
     (test_advanced_robust.py:96-105)."""
 
     return (
-        "Given the following question, generate several keywords, using "
-        "'cosmos' as the separator.\n\n"
+        "Given the following question, generate several keywords separated "
+        "by commas.\n\n"
         f"Question: {question}\n\n"
-        "Format your response as a JSON object with a \"keywords\" field "
-        "containing the selected text.\n\n"
-        "Example response format:\n"
-        "{\"keywords\": \"keyword1, keyword2, keyword3\"}"
+        "Keywords:"
     )
+
+
+def parse_plain_text_answer(response: str) -> str:
+    try:
+        cleaned = _strip_markdown_fences(response)
+        data = json.loads(cleaned)
+        if isinstance(data, dict) and "answer" in data:
+            return str(data["answer"]).strip()
+    except Exception:
+        pass
+    return (response or "").strip()
+
+
+def parse_keywords_response(response: str) -> str:
+    try:
+        cleaned = _strip_markdown_fences(response)
+        data = json.loads(cleaned)
+        if isinstance(data, dict) and "keywords" in data:
+            return str(data["keywords"]).strip()
+    except Exception:
+        pass
+    return (response or "").strip()
+
+
+def _strip_markdown_fences(text: str) -> str:
+    text = (text or "").strip()
+    text = re.sub(r"^```(?:json)?\s*\n?", "", text, flags=re.MULTILINE)
+    text = re.sub(r"\n?\s*```$", "", text, flags=re.MULTILINE)
+    return text.strip()
 
 
 # ----- normalization + F1 (LoCoMo evaluation.py) --------------------- #

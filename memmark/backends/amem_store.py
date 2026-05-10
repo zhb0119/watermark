@@ -250,6 +250,8 @@ class AMemBackend(MemoryBackendAdapter):
             _default_render_memory,
             build_amem_keyword_prompt,
             build_cat_aware_qa_prompt,
+            parse_keywords_response,
+            parse_plain_text_answer,
         )
 
         keywords = question
@@ -259,16 +261,9 @@ class AMemBackend(MemoryBackendAdapter):
                 [{"role": "user", "content": build_amem_keyword_prompt(question)}],
                 temperature=0.0,
             )
-            try:
-                import json as _json
-
-                parsed = _json.loads(_strip_code_fence(kw_raw))
-                kws = parsed.get("keywords")
-                if isinstance(kws, str) and kws.strip():
-                    keywords = kws.strip()
-            except Exception:
-                if isinstance(kw_raw, str) and kw_raw.strip():
-                    keywords = kw_raw.strip()
+            parsed_keywords = parse_keywords_response(kw_raw)
+            if parsed_keywords:
+                keywords = parsed_keywords
         except Exception:
             pass
 
@@ -311,7 +306,7 @@ class AMemBackend(MemoryBackendAdapter):
             answer = ""
         return {
             "mode": "answer",
-            "text": (answer or "").strip(),
+            "text": parse_plain_text_answer(answer),
             "context": raw_context,
             "context_chars": len(raw_context),
             "keywords": keywords,

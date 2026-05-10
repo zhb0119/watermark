@@ -163,6 +163,7 @@ def main() -> None:
         )
         if args.progress:
             print(f"[run:{run_i}/{len(args.baselines)}:done] baseline={label}", flush=True)
+        _write_baseline_checkpoint(args, conv, runs)
 
     # Lazy-import RQ runners (they pull torch via decoder→AgentMark)
     from memmark.experiments import (
@@ -264,6 +265,51 @@ def _build_backend(name: str, amem_model_name: str):
 
         return load_graphiti()
     raise ValueError(f"Unknown backend: {name}")
+
+
+def _write_baseline_checkpoint(args, conv, runs) -> None:
+    out_path = Path(args.output)
+    checkpoint_path = out_path.with_suffix(out_path.suffix + ".partial")
+    latest_label = next(reversed(runs))
+    baseline_path = out_path.with_name(
+        f"{out_path.stem}_{latest_label}{out_path.suffix}"
+    )
+    baseline_out: Dict[str, Any] = {
+        "config": vars(args),
+        "conversation": {
+            "sample_id": conv.sample_id,
+            "session_count": len(conv.sessions),
+            "qa_count": len(conv.qa),
+        },
+        "baseline": latest_label,
+        "details": {latest_label: _run_details(runs[latest_label])},
+    }
+    out: Dict[str, Any] = {
+        "config": vars(args),
+        "conversation": {
+            "sample_id": conv.sample_id,
+            "session_count": len(conv.sessions),
+            "qa_count": len(conv.qa),
+        },
+        "completed_baselines": list(runs.keys()),
+        "details": {label: _run_details(r) for label, r in runs.items()},
+    }
+    checkpoint_path.write_text(
+        json.dumps(_to_jsonable(out), indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    baseline_path.write_text(
+        json.dumps(_to_jsonable(baseline_out), indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    out_path.write_text(
+        json.dumps(_to_jsonable(out), indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    print(
+        f"[checkpoint] saved baseline={latest_label} to {baseline_path}; "
+        f"completed_baselines={list(runs.keys())} to {checkpoint_path}"
+    )
 
 
 def _run_details(result) -> Dict[str, Any]:

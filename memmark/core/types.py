@@ -72,6 +72,13 @@ class AuditRecord:
     # SDK calls (e.g. Graphiti extract_nodes_and_edges = relation choice
     # + entity attachment) get bucketed correctly.
     extra_carriers: tuple = ()
+    # Per-leaf Merkle inclusion proof (filled at seal time). Lets the R3
+    # verifier check each leaf independently against anchor.root, which
+    # gives smooth bit_recovery degradation under structural attacks
+    # (pruning, dedup, poisoning) instead of binary collapse from a
+    # rebuilt-root mismatch. None = pre-seal or legacy audit without
+    # proof (verifier falls back to rebuilt-root check).
+    merkle_inclusion_proof: Optional["MerkleProof"] = None
 
 
 @dataclass(frozen=True)

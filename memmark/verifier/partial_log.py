@@ -95,11 +95,15 @@ def verify_partial_log(
         )
         commit_ok = rebuilt.commitment == audit.commitment
 
-        try:
-            proof = merkle_proof(leaves, idx)
-            proof_ok = proof.verify() and proof.root == anchor.root
-        except IndexError:
-            proof_ok = False
+        stored_proof = getattr(audit, "merkle_inclusion_proof", None)
+        if stored_proof is not None:
+            proof_ok = stored_proof.verify() and stored_proof.root == anchor.root
+        else:
+            try:
+                proof = merkle_proof(leaves, idx)
+                proof_ok = proof.verify() and proof.root == anchor.root
+            except IndexError:
+                proof_ok = False
 
         decoded_bits = decode_memory_transition(
             decision, selected_candidate_id=audit.selected_candidate_id

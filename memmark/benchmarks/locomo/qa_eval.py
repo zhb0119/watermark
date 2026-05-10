@@ -152,16 +152,28 @@ def _strip_markdown_fences(text: str) -> str:
     return text.strip()
 
 
-# ----- normalization + F1 (LoCoMo evaluation.py) --------------------- #
+# ----- normalization + F1 (A-mem utils.py:calculate_metrics) --------- #
+#
+# F1 is paper-comparable to A-mem Table 1: set-based token F1 with
+# A-mem's simple_tokenize (lowercase + replace .,!? with spaces +
+# split). No Porter stemming, no article removal. Switched from the
+# LoCoMo-paper Porter-multiset formula because the headline comparison
+# in the paper is against A-mem and we want the F1 numbers to stack
+# directly. Reference: A-mem/utils.py:34-38 (simple_tokenize) +
+# A-mem/utils.py:135-145 (set-based F1).
 
-try:
-    from nltk.stem import PorterStemmer  # type: ignore
 
-    _STEMMER = PorterStemmer()
-    _stem = _STEMMER.stem
-except ModuleNotFoundError:  # pragma: no cover - nltk optional
-    def _stem(w: str) -> str:  # type: ignore
-        return w
+def _simple_tokenize(text: str) -> List[str]:
+    """A-mem ``utils.py:simple_tokenize`` verbatim."""
+    text = str(text)
+    return (
+        text.lower()
+        .replace(".", " ")
+        .replace(",", " ")
+        .replace("!", " ")
+        .replace("?", " ")
+        .split()
+    )
 
 
 def _normalize(text: str) -> str:
@@ -169,27 +181,28 @@ def _normalize(text: str) -> str:
 
 
 def normalize_answer(s: str) -> str:
+    """Kept for callers (e.g. bleu1) that still want the LoCoMo
+    article-stripped normalization. F1 itself does not use this."""
     s = (s or "").replace(",", "")
-    # remove articles
     s = re.sub(r"\b(a|an|the|and)\b", " ", s)
-    # strip punctuation
     s = "".join(ch for ch in s if ch not in set(string.punctuation))
-    # lower + collapse whitespace
     return " ".join(s.lower().split())
 
 
 def f1_score(prediction: str, ground_truth: str) -> float:
-    pred_tokens = [_stem(w) for w in normalize_answer(prediction).split()]
-    gold_tokens = [_stem(w) for w in normalize_answer(ground_truth).split()]
+    """A-mem set-based F1 (utils.py:135-145), paper-comparable to
+    A-mem Table 1. Sets the "main" LoCoMo metric to the same formula
+    A-mem uses; no Porter stemming, no article removal."""
+    pred_tokens = set(_simple_tokenize(prediction))
+    gold_tokens = set(_simple_tokenize(ground_truth))
     if not pred_tokens or not gold_tokens:
         return 0.0
-    common = Counter(pred_tokens) & Counter(gold_tokens)
-    num_same = sum(common.values())
-    if num_same == 0:
+    common = pred_tokens & gold_tokens
+    if not common:
         return 0.0
-    precision = num_same / len(pred_tokens)
-    recall = num_same / len(gold_tokens)
-    return (2 * precision * recall) / (precision + recall)
+    precision = len(common) / len(pred_tokens)
+    recall = len(common) / len(gold_tokens)
+    return (2 * precision * recall) / (precision + recall) if (precision + recall) else 0.0
 
 
 def f1_multi(prediction: str, ground_truth: str) -> float:

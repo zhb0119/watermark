@@ -4,8 +4,22 @@ Each attack is a deterministic post-processing on the audit trace.
 After the attack we re-run R3 in-record verification (since R3 is the
 hardest case for the watermark) and report:
   * pre/post bit recovery
-  * tamper detection rate (fraction of leaves where commitment now
-    fails verification)
+  * **commitment_fail_rate** — fraction of leaves whose commitment hash
+    no longer matches its reveal record. Catches CONTENT-level tamper
+    (manual_edits, paraphrase, edge_relabel, supersession,
+    subgraph_reanchor) where the leaf still exists but its bytes have
+    changed.
+  * **merkle_proof_fail_rate** — fraction of leaves whose Merkle proof
+    no longer chains to the signed anchor root. Catches STRUCTURAL
+    tamper (pruning, dedup, poisoning, compaction) where the leaf set
+    itself has been resized so the rebuilt root diverges from the
+    signed anchor.
+
+These two signals are deliberately reported separately: a paper
+reviewer asking "did MemMark detect this attack?" needs to know
+*which* layer of the audit caught it. Some attacks trigger only one
+of the two; the union is implicitly available as
+``max(commitment_fail_rate, merkle_proof_fail_rate)`` per row.
 
 The 4 main paper attacks: compaction, supersession, pruning,
 manual_edits. Three appendix attacks: dedup, paraphrase rewrite,
@@ -31,7 +45,8 @@ class AttackOutcome:
     leaves_affected: int
     bit_recovery_pre: float
     bit_recovery_post: float
-    tamper_detection_rate: float
+    commitment_fail_rate: float
+    merkle_proof_fail_rate: float
 
 
 @dataclass
@@ -85,10 +100,13 @@ def run_rq4_robustness(
                 payload_bits=driver_result.payload_bits,
                 secret_key=secret_key,
             )
-            tamper_detected = sum(
+            n_leaves = max(len(post.leaf_results), 1)
+            commit_fail = sum(
                 1 for leaf in post.leaf_results if not leaf.get("commitment_valid")
             )
-            tamper_rate = tamper_detected / max(len(post.leaf_results), 1)
+            proof_fail = sum(
+                1 for leaf in post.leaf_results if not leaf.get("merkle_proof_valid")
+            )
             report.outcomes.append(
                 AttackOutcome(
                     name=name,
@@ -96,7 +114,8 @@ def run_rq4_robustness(
                     leaves_affected=affected,
                     bit_recovery_pre=pre.bit_recovery_rate,
                     bit_recovery_post=post.bit_recovery_rate,
-                    tamper_detection_rate=tamper_rate,
+                    commitment_fail_rate=commit_fail / n_leaves,
+                    merkle_proof_fail_rate=proof_fail / n_leaves,
                 )
             )
     return report

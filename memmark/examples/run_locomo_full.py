@@ -109,7 +109,7 @@ def main() -> None:
     conv = conversations[args.conversation]
 
     runs = {}
-    for label in args.baselines:
+    for run_i, label in enumerate(args.baselines, start=1):
         # Per-baseline isolation: rebuild backend + LLM client +
         # qa_responder + qa_judge from scratch for every baseline. We
         # observed cross-baseline pollution where running watermark

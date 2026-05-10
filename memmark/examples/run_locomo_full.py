@@ -106,16 +106,18 @@ def main() -> None:
         )
     conv = conversations[args.conversation]
 
-    # Build LLM client (for QA only) + LoCoMo-official QA judge.
-    # The watermark itself is now embedded inside each backend's
-    # internal LLM calls via ``WatermarkedSampler`` — no external
-    # carrier planner / candidate synthesis here.
-    llm_client, qa_responder, qa_judge, fact_extractor = _build_qa_layer(
-        args.llm_mode
-    )
-
     runs = {}
     for label in args.baselines:
+        # Per-baseline isolation: rebuild backend + LLM client +
+        # qa_responder + qa_judge from scratch for every baseline. We
+        # observed cross-baseline pollution where running watermark
+        # then no_watermark left the shared LLM client / wrapper in a
+        # state that caused signed_metadata_only and random_replace to
+        # produce empty answers across all 196 questions on conv 8.
+        # Cheap to rebuild (just wraps env API key); buys us provable
+        # independence between baselines and is easier to reason about
+        # than auditing every shared object's lifecycle.
+        llm_client, qa_responder, qa_judge, _ = _build_qa_layer(args.llm_mode)
         backend = _build_backend(args.backend, args.amem_model_name)
         wm = build_baseline(
             label,

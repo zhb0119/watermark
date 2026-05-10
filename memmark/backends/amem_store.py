@@ -315,6 +315,8 @@ class AMemBackend(MemoryBackendAdapter):
             "retrieval_repair": retrieval_repair,
             "retrieval_fallback": retrieval_fallback,
             "user_prompt": user_prompt,
+            # Alias for QA-time evidence_recall (driver reads this).
+            "retrieved_context": raw_context,
         }
 
     # -- internals ------------------------------------------------- #

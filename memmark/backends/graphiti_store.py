@@ -254,7 +254,11 @@ class GraphitiBackend(MemoryBackendAdapter):
             )
         except Exception:
             answer = ""
-        return {"mode": "answer", "text": (answer or "").strip()}
+        return {
+            "mode": "answer",
+            "text": (answer or "").strip(),
+            "retrieved_context": context_text,
+        }
 
 
 def _run_async(coro):

@@ -3,24 +3,27 @@
 Reports whether the watermark introduces wrong-target updates, broken
 links, duplicates, or contradictions. Some of these need ground-truth
 labels; for LoCoMo we use simple heuristics over the final memory
-snapshot:
+snapshot + audit trace:
 
-  * duplication_rate     — fraction of memory records with text
-                            appearing >1 times in the snapshot
-  * contradiction_rate   — placeholder (LoCoMo doesn't ship clean
-                            contradiction labels; reserved for the
-                            §10.7 appendix using LongMemEval's
-                            knowledge-update splits).
-  * stale_memory_count   — number of memories with no recent dia_id
-                            in their context
+  * duplication_rate       — fraction of memory records with text
+                              appearing >1 times in the snapshot
+  * contradiction_rate     — placeholder (LoCoMo doesn't ship clean
+                              contradiction labels; reserved for the
+                              §10.7 appendix using LongMemEval's
+                              knowledge-update splits).
   * update_target_accuracy — when carrier=update_target was chosen,
-                            whether the picked target was the same
-                            entity as the source event (heuristic via
-                            string overlap).
+                              whether the picked target's text shares
+                              ≥1 content keyword with the source event
+                              prompt (heuristic; LoCoMo doesn't ship
+                              ground-truth update targets).
+  * link_target_accuracy   — same heuristic for carrier=link_target:
+                              whether the chosen link target shares
+                              ≥1 content keyword with the source event.
 """
 
 from __future__ import annotations
 
+import json
 from collections import Counter
 from dataclasses import dataclass, field
 from typing import Dict, List
@@ -35,7 +38,9 @@ class RQ5Report:
     update_target_accuracy: float = 0.0
     update_target_total: int = 0
     update_target_correct: int = 0
+    link_target_accuracy: float = 0.0
     link_target_total: int = 0
+    link_target_correct: int = 0
     contradiction_rate: float = 0.0  # placeholder
     overall_records: int = 0
     by_carrier_counts: Dict[str, int] = field(default_factory=dict)
@@ -70,32 +75,45 @@ def run_rq5_integrity(driver_result: LoCoMoDriverResult) -> RQ5Report:
             by_carrier[c] += 1
     report.by_carrier_counts = dict(by_carrier)
 
-    # Update-target accuracy heuristic: did the chosen update target's
-    # original text share keywords with the new event? Count any audit
-    # that lists update_target among its carriers.
-    update_total = 0
-    update_correct = 0
+    # update_target / link_target accuracy heuristic: when the
+    # carrier was chosen, did the picked target's text share ≥1
+    # content keyword with the source event prompt? Both carriers use
+    # the same scheme. ``selected.payload["text"]`` is the chosen LLM
+    # output (the SDK schema-shaped string); the source event prompt
+    # is reconstructed from ``audit.context`` (a JSON-serialized
+    # ctx_payload from WatermarkedSampler.intercept).
+    update_total = update_correct = 0
+    link_total = link_correct = 0
     for decision, audit in zip(driver_result.decisions, driver_result.audits):
-        if "update_target" not in _carriers_of(audit):
+        carriers = _carriers_of(audit)
+        is_update = "update_target" in carriers
+        is_link = "link_target" in carriers
+        if not (is_update or is_link):
             continue
-        update_total += 1
         selected = next(
             (c for c in decision.candidates if c.candidate_id == audit.selected_candidate_id),
             None,
         )
-        if selected is None:
-            continue
-        target_text = selected.payload.get("memory_id", "") or ""
-        new_text = selected.payload.get("new_text", "") or ""
-        if _shares_keywords(target_text, new_text):
-            update_correct += 1
+        target_text = (selected.payload.get("text", "") if selected else "") or ""
+        event_text = _event_text_from_context(audit.context)
+        ok = _shares_keywords(target_text, event_text)
+        if is_update:
+            update_total += 1
+            if ok:
+                update_correct += 1
+        if is_link:
+            link_total += 1
+            if ok:
+                link_correct += 1
     report.update_target_total = update_total
     report.update_target_correct = update_correct
     report.update_target_accuracy = (
         update_correct / update_total if update_total else 0.0
     )
-    report.link_target_total = sum(
-        1 for a in driver_result.audits if "link_target" in _carriers_of(a)
+    report.link_target_total = link_total
+    report.link_target_correct = link_correct
+    report.link_target_accuracy = (
+        link_correct / link_total if link_total else 0.0
     )
 
     # ---- evidence-grounded checks (P2 #4) ---- #
@@ -115,6 +133,29 @@ def _shares_keywords(a: str, b: str, *, min_share: int = 1) -> bool:
     a_words = {w for w in a.lower().split() if len(w) > 3}
     b_words = {w for w in b.lower().split() if len(w) > 3}
     return len(a_words & b_words) >= min_share
+
+
+def _event_text_from_context(context: str) -> str:
+    """Extract the source event prompt text from an audit's serialized
+    ctx_payload (see WatermarkedSampler.intercept). Falls back to the
+    raw context string if parsing fails."""
+    if not context:
+        return ""
+    try:
+        payload = json.loads(context)
+    except (ValueError, TypeError):
+        return context
+    parts = []
+    prompt = payload.get("prompt")
+    if isinstance(prompt, str):
+        parts.append(prompt)
+    event_ctx = payload.get("event_context") or {}
+    if isinstance(event_ctx, dict):
+        for key in ("text", "speaker"):
+            v = event_ctx.get(key)
+            if isinstance(v, str):
+                parts.append(v)
+    return " ".join(parts)
 
 
 def _carriers_of(audit) -> List[str]:

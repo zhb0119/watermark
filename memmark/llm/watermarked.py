@@ -27,6 +27,7 @@ from __future__ import annotations
 import dataclasses
 import hashlib
 import json
+import os
 import re
 from typing import Any, Dict, List, Tuple
 
@@ -116,6 +117,43 @@ def _extract_json_payload(raw: str) -> Any:
     return None
 
 
+def _parse_partial_agentmark_response(raw: str) -> Tuple[List[Any], List[float], List[str]]:
+    s = _strip_code_fence(raw or "")
+    key_pos = s.find('"candidates"')
+    if key_pos == -1:
+        key_pos = s.find("'candidates'")
+    if key_pos == -1:
+        return [], [], ["llm_call"]
+    start = s.find("[", key_pos)
+    if start == -1:
+        return [], [], ["llm_call"]
+    decoder = json.JSONDecoder()
+    decisions: List[Any] = []
+    weights: List[float] = []
+    i = start + 1
+    while i < len(s):
+        while i < len(s) and s[i] in " \r\n\t,":
+            i += 1
+        if i >= len(s) or s[i] == "]":
+            break
+        if s[i] != "{":
+            i += 1
+            continue
+        try:
+            candidate, end = decoder.raw_decode(s, i)
+        except json.JSONDecodeError:
+            break
+        if isinstance(candidate, dict) and "decision" in candidate:
+            try:
+                weight = float(candidate.get("weight", 0.0))
+            except (TypeError, ValueError):
+                weight = 0.0
+            decisions.append(candidate["decision"])
+            weights.append(max(weight, 1e-6))
+        i = end
+    return decisions, weights, ["llm_call"]
+
+
 def parse_agentmark_response(
     raw: str,
 ) -> Tuple[List[Any], List[float], List[str]]:
@@ -141,10 +179,10 @@ def parse_agentmark_response(
 
     parsed = _extract_json_payload(raw)
     if not isinstance(parsed, dict):
-        return [], [], ["llm_call"]
+        return _parse_partial_agentmark_response(raw)
     candidates = parsed.get("candidates")
     if not isinstance(candidates, list):
-        return [], [], ["llm_call"]
+        return _parse_partial_agentmark_response(raw)
     decisions: List[Any] = []
     weights: List[float] = []
     for c in candidates:
@@ -448,23 +486,34 @@ class _AMemInnerWrapper:
         response_format: Any = None,
         temperature: float = 1.0,
     ) -> str:
-        wrapped_prompt = prompt + _format_agentmark_instruction(self.sampler.target_k)
+        wrapped_prompt = prompt + _format_agentmark_instruction(self._target_k())
         permissive_format = {"type": "json_object"}
         try:
             raw = self._call_completion(wrapped_prompt, permissive_format, temperature)
-        except Exception:
+        except Exception as exc:
+            if os.getenv("MEMMARK_DEBUG_LLM"):
+                print(f"[memmark-llm] amem wrapped call failed: {exc.__class__.__name__}: {exc}", flush=True)
             return self._passthrough(prompt, response_format, temperature)
         if not isinstance(raw, str) or not raw.strip():
+            if os.getenv("MEMMARK_DEBUG_LLM"):
+                print("[memmark-llm] amem wrapped call empty; passthrough", flush=True)
             return self._passthrough(prompt, response_format, temperature)
 
         decisions, weights, carriers = parse_agentmark_response(raw)
         if len(decisions) < 2:
             fallback_decisions = self._fallback_candidates(raw, response_format)
             if len(fallback_decisions) < 2:
-                return self._passthrough(prompt, response_format, temperature)
+                if os.getenv("MEMMARK_DEBUG_LLM"):
+                    preview = raw[:300].replace("\n", "\\n")
+                    print(f"[memmark-llm] amem no watermark candidates; passthrough raw={preview}", flush=True)
+                if '"candidates"' in raw[:2000] or "'candidates'" in raw[:2000]:
+                    return self._passthrough(prompt, response_format, temperature)
+                return raw
             decisions = fallback_decisions
             weights = [0.65, 0.35][: len(decisions)]
-            carrier = "semantic_realization"
+            carriers = ["semantic_realization"]
+        decisions = self._normalize_decisions(decisions, response_format)
+        carriers = self._normalize_carriers(carriers, response_format, prompt)
 
         # Convert each decision to a stable JSON string for the SDK.
         decision_strs = [
@@ -487,6 +536,13 @@ class _AMemInnerWrapper:
         except Exception:
             return ""
 
+    def _target_k(self) -> int:
+        try:
+            n = int(os.getenv("MEMMARK_AMEM_TARGET_K", "3"))
+        except ValueError:
+            n = 3
+        return max(2, min(max(n, 2), max(int(self.sampler.target_k), 2)))
+
     def _call_completion(self, prompt, response_format, temperature) -> str:
         if self._memmark_client is not None:
             messages = [
@@ -497,34 +553,263 @@ class _AMemInnerWrapper:
                 "model": self._memmark_client.model,
                 "messages": messages,
                 "temperature": temperature,
-                "max_tokens": 1000,
+                "max_tokens": self._max_tokens(),
             }
             if response_format:
                 kwargs["response_format"] = self._coerce_response_format(response_format)
+            if str(self._memmark_client.model).startswith("deepseek-v4-"):
+                kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
             try:
+                if os.getenv("MEMMARK_DEBUG_LLM"):
+                    base_url = getattr(getattr(self._memmark_client.client, "_client", None), "base_url", "")
+                    print(f"[memmark-llm] amem request model={self._memmark_client.model} base_url={base_url}", flush=True)
                 response = self._memmark_client.client.chat.completions.create(**kwargs)
             except Exception:
                 kwargs.pop("response_format", None)
+                if os.getenv("MEMMARK_DEBUG_LLM"):
+                    print(f"[memmark-llm] amem retry without response_format model={self._memmark_client.model}", flush=True)
                 response = self._memmark_client.client.chat.completions.create(**kwargs)
             return response.choices[0].message.content or ""
         return self.underlying.get_completion(prompt, response_format, temperature)
+
+    @staticmethod
+    def _max_tokens() -> int:
+        raw = os.getenv("MEMMARK_AMEM_MAX_TOKENS") or os.getenv("MEMMARK_LLM_MAX_TOKENS") or "4000"
+        try:
+            return max(512, int(raw))
+        except ValueError:
+            return 4000
 
     def _fallback_candidates(self, raw: str, response_format: Any) -> List[Any]:
         parsed = _extract_json_payload(raw)
         if not isinstance(parsed, dict):
             return []
-        alt = json.loads(json.dumps(parsed, ensure_ascii=False))
-        if "tags" in alt and isinstance(alt["tags"], list):
-            alt["tags"] = list(dict.fromkeys(alt["tags"] + ["memory"]))
-        elif "actions" in alt and isinstance(alt["actions"], list):
-            alt["actions"] = list(dict.fromkeys(alt["actions"]))
-        elif "context" in alt and isinstance(alt["context"], str):
-            alt["context"] = alt["context"].strip()
-        else:
-            return []
-        if alt == parsed:
-            return []
-        return [parsed, alt]
+        if self._looks_like_amem_analysis(parsed):
+            base = self._normalize_amem_analysis(parsed)
+            alt = json.loads(json.dumps(base, ensure_ascii=False))
+            alt["tags"] = self._append_distinct(alt.get("tags", []), "memory")
+            if alt == base:
+                alt["tags"] = self._append_distinct(alt.get("tags", []), "note")
+            return [base, alt] if alt != base else []
+        if self._looks_like_amem_evolution(parsed):
+            base = self._normalize_amem_evolution(parsed)
+            alt = json.loads(json.dumps(base, ensure_ascii=False))
+            alt["tags_to_update"] = self._append_distinct(
+                alt.get("tags_to_update", []), "memory"
+            )
+            if alt == base:
+                alt["tags_to_update"] = self._append_distinct(
+                    alt.get("tags_to_update", []), "note"
+                )
+            return [base, alt] if alt != base else []
+        base = self._normalize_against_response_format(parsed, response_format)
+        if isinstance(base, dict):
+            alt = self._alternative_for_schema(base)
+            return [base, alt] if alt != base else []
+        return []
+
+    def _normalize_decisions(self, decisions: List[Any], response_format: Any) -> List[Any]:
+        normalized: List[Any] = []
+        for decision in decisions:
+            if isinstance(decision, dict):
+                if self._looks_like_amem_analysis(decision):
+                    normalized.append(self._normalize_amem_analysis(decision))
+                    continue
+                if self._looks_like_amem_evolution(decision):
+                    normalized.append(self._normalize_amem_evolution(decision))
+                    continue
+                schema_obj = self._normalize_against_response_format(decision, response_format)
+                normalized.append(schema_obj if isinstance(schema_obj, dict) else decision)
+                continue
+            normalized.append(decision)
+        return normalized
+
+    def _normalize_carriers(
+        self, carriers: List[str], response_format: Any, prompt: str
+    ) -> List[str]:
+        valid = [
+            str(c).strip().lower()
+            for c in carriers
+            if isinstance(c, str) and str(c).strip().lower() in CARRIER_VOCAB
+        ]
+        if valid:
+            return list(dict.fromkeys(valid))
+        inferred = self._infer_carriers(response_format, prompt)
+        return inferred if inferred else ["semantic_realization"]
+
+    @staticmethod
+    def _infer_carriers(response_format: Any, prompt: str) -> List[str]:
+        keys = _AMemInnerWrapper._schema_keys(response_format)
+        if {"keywords", "context", "tags"}.issubset(keys):
+            return ["semantic_realization"]
+        if {
+            "should_evolve",
+            "actions",
+            "suggested_connections",
+            "tags_to_update",
+            "new_context_neighborhood",
+            "new_tags_neighborhood",
+        }.issubset(keys):
+            return ["update_target", "link_target", "semantic_realization"]
+        p = prompt.lower()
+        if "suggested_connections" in p or "neighbor_memory_ids" in p:
+            return ["update_target", "link_target", "semantic_realization"]
+        return ["semantic_realization"]
+
+    @staticmethod
+    def _schema_keys(response_format: Any) -> set:
+        if not isinstance(response_format, dict):
+            return set()
+        json_schema = response_format.get("json_schema")
+        if not isinstance(json_schema, dict):
+            return set()
+        schema = json_schema.get("schema")
+        if not isinstance(schema, dict):
+            return set()
+        properties = schema.get("properties")
+        return set(properties) if isinstance(properties, dict) else set()
+
+    @staticmethod
+    def _normalize_against_response_format(
+        obj: Dict[str, Any], response_format: Any
+    ) -> Any:
+        if not isinstance(response_format, dict):
+            return None
+        json_schema = response_format.get("json_schema")
+        if not isinstance(json_schema, dict):
+            return None
+        schema = json_schema.get("schema")
+        if not isinstance(schema, dict):
+            return None
+        properties = schema.get("properties")
+        if not isinstance(properties, dict):
+            return None
+        required = schema.get("required")
+        keys = required if isinstance(required, list) and required else list(properties)
+        return {
+            str(key): _AMemInnerWrapper._coerce_schema_value(
+                obj.get(key), properties.get(key, {})
+            )
+            for key in keys
+            if key in properties
+        }
+
+    @staticmethod
+    def _coerce_schema_value(value: Any, schema: Any) -> Any:
+        if not isinstance(schema, dict):
+            return value
+        typ = schema.get("type")
+        if typ == "boolean":
+            return bool(value) if value is not None else False
+        if typ == "integer":
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                return 0
+        if typ == "number":
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return 0.0
+        if typ == "string":
+            return str(value or "")
+        if typ == "array":
+            items = schema.get("items", {})
+            values = value if isinstance(value, list) else []
+            return [
+                _AMemInnerWrapper._coerce_schema_value(item, items)
+                for item in values
+                if item is not None
+            ]
+        if typ == "object":
+            return value if isinstance(value, dict) else {}
+        return value
+
+    @staticmethod
+    def _alternative_for_schema(obj: Dict[str, Any]) -> Dict[str, Any]:
+        alt = json.loads(json.dumps(obj, ensure_ascii=False))
+        for key in ("tags", "tags_to_update", "keywords", "actions"):
+            if isinstance(alt.get(key), list):
+                alt[key] = _AMemInnerWrapper._append_distinct(alt[key], "memory")
+                return alt
+        for key, value in alt.items():
+            if isinstance(value, str):
+                alt[key] = value.strip() or "General"
+                if alt[key] == value:
+                    alt[key] = value + " "
+                return alt
+        return alt
+
+    @staticmethod
+    def _looks_like_amem_analysis(obj: Dict[str, Any]) -> bool:
+        return {"keywords", "context", "tags"}.issubset(obj)
+
+    @staticmethod
+    def _looks_like_amem_evolution(obj: Dict[str, Any]) -> bool:
+        return {
+            "should_evolve",
+            "actions",
+            "suggested_connections",
+            "tags_to_update",
+            "new_context_neighborhood",
+            "new_tags_neighborhood",
+        }.issubset(obj)
+
+    @staticmethod
+    def _normalize_amem_analysis(obj: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            "keywords": [str(x) for x in obj.get("keywords", []) if x is not None],
+            "context": str(obj.get("context", "") or "General"),
+            "tags": [str(x) for x in obj.get("tags", []) if x is not None],
+        }
+
+    @staticmethod
+    def _normalize_amem_evolution(obj: Dict[str, Any]) -> Dict[str, Any]:
+        actions: List[str] = []
+        for action in obj.get("actions", []):
+            action_s = str(action)
+            if action_s in ("strengthen", "update_neighbor"):
+                actions.append(action_s)
+            elif action_s == "link_target":
+                actions.append("strengthen")
+            elif action_s == "update_target":
+                actions.append("update_neighbor")
+        actions = list(dict.fromkeys(actions))
+        return {
+            "should_evolve": bool(obj.get("should_evolve", False)),
+            "actions": actions,
+            "suggested_connections": _AMemInnerWrapper._coerce_int_list(
+                obj.get("suggested_connections", [])
+            ),
+            "tags_to_update": [
+                str(x) for x in obj.get("tags_to_update", []) if x is not None
+            ],
+            "new_context_neighborhood": [
+                str(x) for x in obj.get("new_context_neighborhood", []) if x is not None
+            ],
+            "new_tags_neighborhood": [
+                [str(t) for t in tags if t is not None]
+                for tags in obj.get("new_tags_neighborhood", [])
+                if isinstance(tags, list)
+            ],
+        }
+
+    @staticmethod
+    def _coerce_int_list(values: Any) -> List[int]:
+        out: List[int] = []
+        if not isinstance(values, list):
+            return out
+        for value in values:
+            if isinstance(value, int):
+                out.append(value)
+            elif isinstance(value, str) and value.isdigit():
+                out.append(int(value))
+        return out
+
+    @staticmethod
+    def _append_distinct(values: Any, value: str) -> List[str]:
+        items = [str(x) for x in values if x is not None] if isinstance(values, list) else []
+        return list(dict.fromkeys(items + [value]))
 
     @staticmethod
     def _coerce_response_format(response_format: Any) -> Any:

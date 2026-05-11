@@ -1,0 +1,30 @@
+$env:MEMMARK_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+$env:MEMMARK_MODEL = "MiniMax-M2.5"
+$env:MEMMARK_API_KEY = "sk-e82ee24c2e084a6883b279540bad188d"
+
+$env:OPENAI_BASE_URL = $env:MEMMARK_BASE_URL
+$env:OPENAI_API_KEY = $env:MEMMARK_API_KEY
+$env:OPENAI_MODEL = $env:MEMMARK_MODEL
+
+$env:TARGET_LLM_BASE = $env:MEMMARK_BASE_URL
+$env:TARGET_LLM_MODEL = $env:MEMMARK_MODEL
+
+$env:MEMMARK_KEY = "memmark-research-key-please-rotate"
+$env:MEMMARK_LOCOMO_PATH = "C:\桌面\agent-mem\watermark\locomo\data\locomo10.json"
+
+conda activate memmark-amem
+
+python -c "from memmark.llm import OpenAIChatClient; c=OpenAIChatClient(); print(c.model); print(repr(c.complete([{'role':'user','content':'Return OK only'}], max_tokens=20)))"
+
+python -m memmark.examples.run_locomo_full `
+    --locomo $env:MEMMARK_LOCOMO_PATH `
+    --conversation 1 `
+    --backend amem `
+    --amem-model-name "C:\桌面\models\all-MiniLM-L6-v2" `
+    --llm-mode real `
+    --progress `
+    --async-assess --async-max-concurrency 4 `
+    --max-sessions 999 `
+    --max-qa 9999 `
+    --baselines watermark no_watermark signed_metadata_only random_replace `
+    --output ".\results\minimax_m25\conv1.json"

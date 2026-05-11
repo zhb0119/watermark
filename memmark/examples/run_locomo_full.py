@@ -205,7 +205,9 @@ def main() -> None:
         "rq5_integrity": {k: _to_jsonable(v) for k, v in rq5.items()},
         "details": details,
     }
-    Path(args.output).write_text(
+    final_path = Path(args.output)
+    final_path.parent.mkdir(parents=True, exist_ok=True)
+    final_path.write_text(
         json.dumps(out, indent=2, ensure_ascii=False), encoding="utf-8"
     )
     print(f"\nResults saved to {args.output}")
@@ -263,6 +265,7 @@ def _build_backend(name: str, amem_model_name: str):
 
 def _write_baseline_checkpoint(args, conv, runs) -> None:
     out_path = Path(args.output)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
     checkpoint_path = out_path.with_suffix(out_path.suffix + ".partial")
     latest_label = next(reversed(runs))
     baseline_path = out_path.with_name(

@@ -240,7 +240,7 @@ class LoCoMoDriver:
             if self.max_turns_per_session is not None:
                 turns = turns[: self.max_turns_per_session]
             events_before = len(result.extracted_events)
-            audits_before = len(result.audits)
+            audits_before = len(self.wm.audits)
             self._progress.line(
                 f"[session] conversation={self._active_conversation} "
                 f"{_progress_bar(session_i, len(sessions), 12)} "
@@ -262,8 +262,8 @@ class LoCoMoDriver:
                 f"[session done] conversation={self._active_conversation} "
                 f"session={session_i}/{len(sessions)} "
                 f"events+={len(result.extracted_events) - events_before} "
-                f"llm+={len(result.audits) - audits_before} "
-                f"total_events={len(result.extracted_events)} bits={result.bits_embedded_total}"
+                f"llm+={len(self.wm.audits) - audits_before} "
+                f"total_events={len(result.extracted_events)} bits={self.wm.bit_index}"
             )
 
         self._progress.line("[seal] finalizing watermark anchor")
@@ -471,8 +471,8 @@ class LoCoMoDriver:
                 f"[turn] conversation={self._active_conversation} "
                 f"session={self._active_session_i}/{self._active_session_count} "
                 f"{_progress_bar(turn_i, total_turns)} dia={turn.dia_id} "
-                f"events={len(result.extracted_events)} llm={len(result.audits)} "
-                f"bits={result.bits_embedded_total}"
+                f"events={len(result.extracted_events)} llm={len(self.wm.audits)} "
+                f"bits={self.wm.bit_index}"
             )
             self._evolve_one(
                 event_text,
@@ -489,8 +489,8 @@ class LoCoMoDriver:
                 f"[turn] conversation={self._active_conversation} "
                 f"session={self._active_session_i}/{self._active_session_count} "
                 f"{_progress_bar(turn_i, total_turns)} dia={turn.dia_id} "
-                f"events={len(result.extracted_events)} llm={len(result.audits)} "
-                f"bits={result.bits_embedded_total}"
+                f"events={len(result.extracted_events)} llm={len(self.wm.audits)} "
+                f"bits={self.wm.bit_index}"
             )
 
     def _ingest_session_mode(

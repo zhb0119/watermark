@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -32,6 +33,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--topk-context", type=int, default=10)
     parser.add_argument("--max-context-chars", type=int, default=12000)
     parser.add_argument("--llm-mode", choices=("real",), default="real")
+    parser.add_argument("--rq-metrics", action="store_true")
+    parser.add_argument("--longmemeval-root", default=os.getenv("LONGMEMEVAL_ROOT"))
+    parser.add_argument("--judge-model", default=os.getenv("LONGMEMEVAL_JUDGE_MODEL", "gpt-4o"))
+    parser.add_argument("--judge-base-url", default=os.getenv("LONGMEMEVAL_JUDGE_BASE_URL") or os.getenv("OPENAI_BASE_URL"))
+    parser.add_argument("--judge-api-key", default=os.getenv("LONGMEMEVAL_JUDGE_API_KEY") or os.getenv("OPENAI_API_KEY"))
+    parser.add_argument("--judge-provider-model", default=os.getenv("LONGMEMEVAL_JUDGE_PROVIDER_MODEL"))
     parser.add_argument("--progress", action="store_true")
     return parser
 
@@ -81,6 +88,13 @@ def main() -> None:
                 print(json.dumps({"question_id": result.question_id, "hypothesis": result.hypothesis}, ensure_ascii=False), file=hyp_f, flush=True)
                 _write_detail(detail_path, args, stem, label, details)
         _write_detail(detail_path, args, stem, label, details)
+        if args.rq_metrics:
+            eval_path = output_dir / f"{stem}_{label}.jsonl.eval-results-{args.judge_model}"
+            official_eval = _run_official_eval(args, hyp_path, Path(args.input), eval_path)
+            metrics_path = output_dir / f"{stem}_{label}_rq_metrics.json"
+            metrics = _compute_rq_metrics(args, stem, label, detail_path, details, official_eval)
+            metrics_path.write_text(json.dumps(metrics, indent=2, ensure_ascii=False), encoding="utf-8")
+            print(f"[{label}] rq_metrics={metrics_path}")
         print(f"[{label}] hypothesis={hyp_path} details={detail_path}")
 
 
@@ -113,6 +127,133 @@ def _write_detail(path: Path, args: argparse.Namespace, stem: str, baseline: str
         "details": details,
     }
     path.write_text(json.dumps(out, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+def _run_official_eval(args: argparse.Namespace, hyp_path: Path, ref_path: Path, eval_path: Path) -> Dict[str, Any]:
+    module = _load_official_eval_module(args.longmemeval_root)
+    metric_model, metric_source = module.model_zoo[args.judge_model]
+    provider_model = args.judge_provider_model or metric_model
+    if metric_source != "openai":
+        raise RuntimeError("LongMemEval RQ1 import currently supports openai-compatible judge models only.")
+    from openai import OpenAI
+
+    client = OpenAI(api_key=args.judge_api_key or os.getenv("OPENAI_API_KEY"), base_url=args.judge_base_url)
+    hypotheses = [json.loads(line) for line in hyp_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    references = json.loads(ref_path.read_text(encoding="utf-8"))
+    qid2ref = {entry["question_id"]: entry for entry in references}
+    logs = []
+    by_type: Dict[str, list[int]] = {}
+    eval_path.parent.mkdir(parents=True, exist_ok=True)
+    with eval_path.open("w", encoding="utf-8") as out_f:
+        for entry in hypotheses:
+            qid = entry.get("question_id")
+            if qid not in qid2ref:
+                continue
+            ref = qid2ref[qid]
+            prompt = module.get_anscheck_prompt(
+                ref["question_type"],
+                ref["question"],
+                ref["answer"],
+                entry.get("hypothesis", ""),
+                abstention="_abs" in str(qid),
+            )
+            completion = module.chat_completions_with_backoff(
+                client,
+                model=provider_model,
+                messages=[{"role": "user", "content": prompt}],
+                n=1,
+                temperature=0,
+                max_tokens=10,
+            )
+            raw = completion.choices[0].message.content.strip()
+            label = "yes" in raw.lower()
+            item = dict(entry)
+            item["autoeval_label"] = {"model": provider_model, "label": label, "raw": raw}
+            logs.append(item)
+            by_type.setdefault(ref["question_type"], []).append(1 if label else 0)
+            print(json.dumps(item, ensure_ascii=False), file=out_f)
+    return {
+        "model": provider_model,
+        "accuracy": sum(1 for item in logs if item["autoeval_label"]["label"]) / len(logs) if logs else 0.0,
+        "count": len(logs),
+        "by_question_type": {k: {"accuracy": sum(v) / len(v), "count": len(v)} for k, v in by_type.items()},
+        "eval_path": str(eval_path),
+    }
+
+
+def _compute_rq_metrics(args: argparse.Namespace, stem: str, label: str, detail_path: Path, details: list[Dict[str, Any]], official_eval: Dict[str, Any]) -> Dict[str, Any]:
+    from memmark.benchmarks.locomo.driver import LoCoMoDriverResult, _capacity_stats
+    from memmark.experiments import run_rq2_capacity, run_rq3_in_record, run_rq4_robustness, run_rq5_integrity
+
+    final = details[-1] if details else {}
+    result = LoCoMoDriverResult(
+        sample_id=stem,
+        decisions=final.get("decisions") or [],
+        audits=final.get("audits") or [],
+        anchor=final.get("anchor"),
+        memory_snapshot_final=final.get("memory_snapshot_final") or [],
+        qa_predictions=[
+            {"question_id": item.get("question_id"), "judge_correct": False, "correct": False}
+            for item in details
+        ],
+        capacity_stats=final.get("capacity_stats") or {},
+        extracted_events=[ev for item in details for ev in (item.get("extracted_events") or [])],
+        payload_bits=str((vars(args) or {}).get("payload_bits") or ""),
+    )
+    result = _rehydrate_result(result)
+    result.capacity_stats = result.capacity_stats or _capacity_stats(result.audits, result.decisions)
+    rq2 = run_rq2_capacity(result)
+    rq3 = run_rq3_in_record(driver_result=result, secret_key=args.secret_key)
+    rq4 = run_rq4_robustness(driver_result=result, secret_key=args.secret_key)
+    rq5 = run_rq5_integrity(result)
+    return {
+        "benchmark": "longmemeval",
+        "dataset": stem,
+        "baseline": label,
+        "detail_path": str(detail_path),
+        "rq1_utility": {
+            "official_eval": official_eval,
+            "memory_count": len(result.memory_snapshot_final),
+            "write_failures": sum(1 for ev in result.extracted_events if not ev.get("applied")),
+            "bits_embedded": sum(a.bits_embedded for a in result.audits),
+            "capacity_bits_per_decision": result.capacity_stats.get("bits_per_decision", 0.0),
+        },
+        "rq2_capacity": _to_jsonable(rq2),
+        "rq3_in_record": _to_jsonable(rq3),
+        "rq4_robustness": _to_jsonable(rq4),
+        "rq5_integrity": _to_jsonable(rq5),
+    }
+
+
+def _load_official_eval_module(root: str | None):
+    if not root:
+        raise RuntimeError("Set --longmemeval-root or LONGMEMEVAL_ROOT for --rq-metrics.")
+    path = Path(root) / "src" / "evaluation" / "evaluate_qa.py"
+    spec = importlib.util.spec_from_file_location("longmemeval_official_evaluate_qa", path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"Cannot import official evaluator: {path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _rehydrate_result(result):
+    from scripts.summarize_longmemeval_rq_metrics import _anchor, _audit, _decision
+
+    result.decisions = [_decision(x) if isinstance(x, dict) else x for x in result.decisions]
+    result.audits = [_audit(x) if isinstance(x, dict) else x for x in result.audits]
+    result.anchor = _anchor(result.anchor) if isinstance(result.anchor, dict) else result.anchor
+    return result
+
+
+def _to_jsonable(obj: Any) -> Any:
+    if hasattr(obj, "__dict__"):
+        return {k: _to_jsonable(v) for k, v in obj.__dict__.items()}
+    if isinstance(obj, dict):
+        return {k: _to_jsonable(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_to_jsonable(v) for v in obj]
+    return obj
 
 
 def _summary(details: list[Dict[str, Any]]) -> Dict[str, Any]:

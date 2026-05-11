@@ -9,6 +9,10 @@ $env:OPENAI_MODEL = $env:MEMMARK_MODEL
 $env:TARGET_LLM_BASE = $env:MEMMARK_BASE_URL
 $env:TARGET_LLM_MODEL = $env:MEMMARK_MODEL
 
+$env:LONGMEMEVAL_JUDGE_BASE_URL = "https://openrouter.ai/api/v1"
+$env:LONGMEMEVAL_JUDGE_MODEL = "gpt-4o"
+$env:LONGMEMEVAL_JUDGE_API_KEY = "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"
+
 $env:MEMMARK_KEY = "memmark-research-key-please-rotate"
 $env:LONGMEMEVAL_ROOT = "C:\桌面\agent-mem\LongMemEval"
 $env:LONGMEMEVAL_PATH = "$env:LONGMEMEVAL_ROOT\data\longmemeval_s.json"
@@ -19,15 +23,16 @@ python -m memmark.examples.run_longmemeval `
     --input $env:LONGMEMEVAL_PATH `
     --backend amem `
     --amem-model-name "C:\桌面\models\all-MiniLM-L6-v2" `
-    --baselines watermark no_watermark signed_metadata_only random_replace `
+    --baselines watermark `
     --max-examples 1 `
     --ingestion-level session `
     --topk-context 10 `
     --max-context-chars 12000 `
+    --rq-metrics `
+    --longmemeval-root $env:LONGMEMEVAL_ROOT `
+    --judge-model $env:LONGMEMEVAL_JUDGE_MODEL `
+    --judge-base-url $env:LONGMEMEVAL_JUDGE_BASE_URL `
+    --judge-api-key $env:LONGMEMEVAL_JUDGE_API_KEY `
+    --judge-provider-model "openai/gpt-4o" `
     --progress `
-    --output-dir ".\results\longmemeval\deepseek_v4_flash"
-
-python "$env:LONGMEMEVAL_ROOT\src\evaluation\evaluate_qa.py" `
-    gpt-4o `
-    .\results\longmemeval\deepseek_v4_flash\longmemeval_s_watermark.jsonl `
-    $env:LONGMEMEVAL_PATH
+    --output-dir ".\results\longmemeval\deepseek_v4_flash_v2"

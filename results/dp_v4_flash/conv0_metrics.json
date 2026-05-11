@@ -28,7 +28,8 @@
   },
   "completed_baselines": [
     "watermark",
-    "no_watermark"
+    "no_watermark",
+    "signed_metadata_only"
   ],
   "rq1_utility": {
     "rows": [
@@ -129,6 +130,55 @@
         "write_failures": 3,
         "bits_embedded": 0,
         "capacity_bits_per_decision": 0.0
+      },
+      {
+        "label": "signed_metadata_only",
+        "qa_accuracy": 0.33668341708542715,
+        "qa_f1": 0.35694575598538014,
+        "qa_bleu1": 0.4077065138279228,
+        "qa_rougeL": 0.3557745263742642,
+        "qa_count": 199,
+        "qa_by_category": {
+          "2": {
+            "n": 37.0,
+            "f1": 0.3254095004095004,
+            "bleu1": 0.4012548262548263,
+            "rougeL": 0.3809465309465309,
+            "judge_acc": 0.2972972972972973
+          },
+          "3": {
+            "n": 13.0,
+            "f1": 0.41439842209072975,
+            "bleu1": 0.6089743589743589,
+            "rougeL": 0.2587207664130741,
+            "judge_acc": 0.38461538461538464
+          },
+          "1": {
+            "n": 32.0,
+            "f1": 0.21719083867521363,
+            "bleu1": 0.2927655677655678,
+            "rougeL": 0.21612675518925523,
+            "judge_acc": 0.25
+          },
+          "4": {
+            "n": 70.0,
+            "f1": 0.40812265885375126,
+            "bleu1": 0.4460289115646259,
+            "rougeL": 0.40727216434359287,
+            "judge_acc": 0.37142857142857144
+          },
+          "5": {
+            "n": 47.0,
+            "f1": 0.38481237194447254,
+            "bleu1": 0.3782974262902003,
+            "rougeL": 0.38118364829743184,
+            "judge_acc": 0.3617021276595745
+          }
+        },
+        "memory_count": 419,
+        "write_failures": 0,
+        "bits_embedded": 0,
+        "capacity_bits_per_decision": 0.0
       }
     ],
     "deltas": {
@@ -139,6 +189,14 @@
         "qa_rougeL_delta": -0.025149314460444716,
         "memory_count_delta": -1,
         "write_failures_delta": 1
+      },
+      "signed_metadata_only": {
+        "qa_accuracy_delta": -0.030150753768844185,
+        "qa_f1_delta": -0.0006704607624218872,
+        "qa_bleu1_delta": 0.005641342905252478,
+        "qa_rougeL_delta": 0.008041562580287931,
+        "memory_count_delta": 0,
+        "write_failures_delta": -3
       }
     }
   },
@@ -211,6 +269,42 @@
           "bits_per_decision": 0.0,
           "avg_candidate_set_size": 3.0,
           "avg_entropy": 1.1111440231646066,
+          "acceptance_rate": 1.0
+        }
+      }
+    },
+    "signed_metadata_only": {
+      "overall": {
+        "decisions": 832.0,
+        "bits_embedded": 0.0,
+        "bits_per_decision": 0.0,
+        "avg_candidate_set_size": 2.9939903846153846,
+        "avg_entropy": 1.0725966915663023,
+        "acceptance_rate": 1.0
+      },
+      "by_carrier": {
+        "semantic_realization": {
+          "decisions": 423.0,
+          "bits_embedded": 0.0,
+          "bits_per_decision": 0.0,
+          "avg_candidate_set_size": 2.9952718676122934,
+          "avg_entropy": 1.0464973210432706,
+          "acceptance_rate": 1.0
+        },
+        "link_target": {
+          "decisions": 236.0,
+          "bits_embedded": 0.0,
+          "bits_per_decision": 0.0,
+          "avg_candidate_set_size": 2.98728813559322,
+          "avg_entropy": 1.0954795960690416,
+          "acceptance_rate": 1.0
+        },
+        "update_target": {
+          "decisions": 173.0,
+          "bits_embedded": 0.0,
+          "bits_per_decision": 0.0,
+          "avg_candidate_set_size": 3.0,
+          "avg_entropy": 1.1051959301131247,
           "acceptance_rate": 1.0
         }
       }
@@ -295,6 +389,87 @@
           "bits_total": 8,
           "bits_recovered": 8,
           "bit_recovery_rate": 1.0
+        }
+      }
+    },
+    "signed_metadata_only": {
+      "r1": {
+        "bit_recovery_rate": 0.0,
+        "commitment_pass_rate": 1.0,
+        "bits_total": 0.0,
+        "bits_recovered": 0.0
+      },
+      "r2": {
+        "r=0.9": {
+          "kept_leaves": 749.0,
+          "anchor_signature_valid": 1.0,
+          "root_matches": 1.0,
+          "bit_recovery_rate": 0.0,
+          "bits_recovered": 0.0,
+          "bits_total": 0.0
+        },
+        "r=0.7": {
+          "kept_leaves": 582.0,
+          "anchor_signature_valid": 1.0,
+          "root_matches": 1.0,
+          "bit_recovery_rate": 0.0,
+          "bits_recovered": 0.0,
+          "bits_total": 0.0
+        },
+        "r=0.5": {
+          "kept_leaves": 416.0,
+          "anchor_signature_valid": 1.0,
+          "root_matches": 1.0,
+          "bit_recovery_rate": 0.0,
+          "bits_recovered": 0.0,
+          "bits_total": 0.0
+        },
+        "r=0.3": {
+          "kept_leaves": 250.0,
+          "anchor_signature_valid": 1.0,
+          "root_matches": 1.0,
+          "bit_recovery_rate": 0.0,
+          "bits_recovered": 0.0,
+          "bits_total": 0.0
+        },
+        "r=0.1": {
+          "kept_leaves": 83.0,
+          "anchor_signature_valid": 1.0,
+          "root_matches": 1.0,
+          "bit_recovery_rate": 0.0,
+          "bits_recovered": 0.0,
+          "bits_total": 0.0
+        }
+      },
+      "r3": {
+        "anchor_signature_valid": 1.0,
+        "root_matches": 1.0,
+        "bit_recovery_rate": 0.0,
+        "bits_recovered": 0.0,
+        "bits_total": 0.0
+      },
+      "r3_wrong_key": {
+        "anchor_signature_valid": 0.0,
+        "bit_recovery_rate": 0.0
+      },
+      "r3_carrier_breakdown": {
+        "semantic_realization": {
+          "leaves": 423,
+          "bits_total": 0,
+          "bits_recovered": 0,
+          "bit_recovery_rate": 0.0
+        },
+        "link_target": {
+          "leaves": 236,
+          "bits_total": 0,
+          "bits_recovered": 0,
+          "bit_recovery_rate": 0.0
+        },
+        "update_target": {
+          "leaves": 173,
+          "bits_total": 0,
+          "bits_recovered": 0,
+          "bit_recovery_rate": 0.0
         }
       }
     }
@@ -643,6 +818,26 @@
       "evidence_recall_mean": 0.6142131979695431,
       "evidence_required_qas": 197,
       "qa_with_full_evidence": 110
+    },
+    "signed_metadata_only": {
+      "duplication_rate": 0.0,
+      "duplicate_count": 0,
+      "update_target_accuracy": 1.0,
+      "update_target_total": 173,
+      "update_target_correct": 173,
+      "link_target_accuracy": 1.0,
+      "link_target_total": 236,
+      "link_target_correct": 236,
+      "contradiction_rate": 0.0,
+      "overall_records": 419,
+      "by_carrier_counts": {
+        "semantic_realization": 423,
+        "link_target": 236,
+        "update_target": 173
+      },
+      "evidence_recall_mean": 0.5740270727580373,
+      "evidence_required_qas": 197,
+      "qa_with_full_evidence": 103
     }
   }
 }

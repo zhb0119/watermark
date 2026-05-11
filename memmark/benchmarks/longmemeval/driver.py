@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from memmark.benchmarks.longmemeval.loader import LongMemEvalExample
+from memmark.benchmarks.locomo.driver import _capacity_stats
+from memmark.core.types import AuditRecord, DecisionPoint, SessionHeader
 from memmark.sdk.memory_watermarker import MemoryWatermarker
 
 
@@ -20,6 +22,11 @@ class LongMemEvalDriverResult:
     extracted_events: List[Dict[str, Any]] = field(default_factory=list)
     memory_snapshot_final: List[Dict[str, Any]] = field(default_factory=list)
     qa_trace: Dict[str, Any] = field(default_factory=dict)
+    decisions: List[DecisionPoint] = field(default_factory=list)
+    audits: List[AuditRecord] = field(default_factory=list)
+    anchor: Optional[SessionHeader] = None
+    capacity_stats: Dict[str, Any] = field(default_factory=dict)
+    payload_bits: str = ""
     audits_count: int = 0
     bits_embedded: int = 0
     write_failures: int = 0
@@ -98,9 +105,27 @@ class LongMemEvalDriver:
                     source_label=source_label,
                     result=result,
                 )
+        result.anchor = self.wm.seal_session()
+        result.audits = list(self.wm.audits)
+        result.decisions = [
+            DecisionPoint(
+                decision_id=a.decision_id,
+                tau=a.tau,
+                candidates=a.candidates,
+                probabilities=a.probabilities,
+                context=a.context,
+                round_num=a.round_num,
+                nonce=a.nonce,
+                watermark_version=a.watermark_version,
+            )
+            for a in result.audits
+            if a.candidates and a.probabilities
+        ]
+        result.capacity_stats = _capacity_stats(result.audits, result.decisions)
+        result.payload_bits = self.wm.payload_bits
         result.memory_snapshot_final = self.wm.backend.snapshot()
-        result.audits_count = len(self.wm.audits)
-        result.bits_embedded = sum(a.bits_embedded for a in self.wm.audits)
+        result.audits_count = len(result.audits)
+        result.bits_embedded = sum(a.bits_embedded for a in result.audits)
         result.hypothesis, result.qa_trace = self._answer(example)
         result.write_failures = sum(1 for item in result.extracted_events if not item.get("applied"))
         self._line(f"[done] qid={example.question_id} memories={len(result.memory_snapshot_final)} llm={result.audits_count} bits={result.bits_embedded}")

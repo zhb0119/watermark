@@ -27,4 +27,5 @@ python -m memmark.examples.run_locomo_full `
     --max-sessions 999 `
     --max-qa 9999 `
     --baselines watermark no_watermark signed_metadata_only random_replace `
-    --output ".\results\deepseek_v4_flash\conv1.json"
+    --output-mode metrics `
+    --output ".\results\deepseek_v4_flash\conv1_metrics.json"

@@ -79,6 +79,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--amem-model-name", default="all-MiniLM-L6-v2")
     parser.add_argument("--output", default="memmark_locomo_results.json")
+    parser.add_argument(
+        "--output-mode",
+        choices=("full", "metrics"),
+        default="full",
+        help="full writes detailed traces; metrics writes only RQ1-RQ5 metric data.",
+    )
     parser.add_argument("--async-assess", action="store_true")
     parser.add_argument("--async-max-concurrency", type=int, default=4)
     parser.add_argument(
@@ -159,38 +165,7 @@ def main() -> None:
             print(f"[run:{run_i}/{len(args.baselines)}:done] baseline={label}", flush=True)
         _write_baseline_checkpoint(args, conv, runs)
 
-    # Lazy-import RQ runners (they pull torch via decoder→AgentMark)
-    from memmark.experiments import (
-        run_rq1_utility,
-        run_rq2_capacity,
-        run_rq3_in_record,
-        run_rq4_robustness,
-        run_rq5_integrity,
-    )
-
-    rq1 = run_rq1_utility(runs=runs)
-    rq2 = {label: run_rq2_capacity(r) for label, r in runs.items()}
-
-    rq3 = {}
-    if "watermark" in runs:
-        rq3["watermark"] = run_rq3_in_record(
-            driver_result=runs["watermark"], secret_key=args.secret_key
-        )
-    if "signed_metadata_only" in runs:
-        rq3["signed_metadata_only"] = run_rq3_in_record(
-            driver_result=runs["signed_metadata_only"], secret_key=args.secret_key
-        )
-
-    rq4 = {}
-    if "watermark" in runs:
-        rq4["watermark"] = run_rq4_robustness(
-            driver_result=runs["watermark"], secret_key=args.secret_key
-        )
-
-    rq5 = {label: run_rq5_integrity(r) for label, r in runs.items()}
-
-    details = {label: _run_details(r) for label, r in runs.items()}
-
+    rq = _compute_rq_metrics(runs, args.secret_key)
     out: Dict[str, Any] = {
         "config": vars(args),
         "conversation": {
@@ -198,23 +173,20 @@ def main() -> None:
             "session_count": len(conv.sessions),
             "qa_count": len(conv.qa),
         },
-        "rq1_utility": _to_jsonable(rq1),
-        "rq2_capacity": {k: _to_jsonable(v) for k, v in rq2.items()},
-        "rq3_in_record": {k: _to_jsonable(v) for k, v in rq3.items()},
-        "rq4_robustness": {k: _to_jsonable(v) for k, v in rq4.items()},
-        "rq5_integrity": {k: _to_jsonable(v) for k, v in rq5.items()},
-        "details": details,
+        **rq,
     }
+    if args.output_mode == "full":
+        out["details"] = {label: _run_details(r) for label, r in runs.items()}
     final_path = Path(args.output)
     final_path.parent.mkdir(parents=True, exist_ok=True)
     final_path.write_text(
         json.dumps(out, indent=2, ensure_ascii=False), encoding="utf-8"
     )
     print(f"\nResults saved to {args.output}")
-    if "watermark" in rq3:
-        report = rq3["watermark"]
+    if "watermark" in rq["rq3_in_record"]:
+        report = rq["rq3_in_record"]["watermark"]
         print("\n=== Headline (R3 In-Record Attribution) ===")
-        print(json.dumps(_to_jsonable(report), indent=2, ensure_ascii=False))
+        print(json.dumps(report, indent=2, ensure_ascii=False))
 
 
 def _build_qa_layer(mode: str):
@@ -263,6 +235,46 @@ def _build_backend(name: str, amem_model_name: str):
     raise ValueError(f"Unknown backend: {name}")
 
 
+def _compute_rq_metrics(runs, secret_key: str) -> Dict[str, Any]:
+    from memmark.experiments import (
+        run_rq1_utility,
+        run_rq2_capacity,
+        run_rq3_in_record,
+        run_rq4_robustness,
+        run_rq5_integrity,
+    )
+
+    rq3 = {}
+    if "watermark" in runs:
+        rq3["watermark"] = run_rq3_in_record(
+            driver_result=runs["watermark"], secret_key=secret_key
+        )
+    if "signed_metadata_only" in runs:
+        rq3["signed_metadata_only"] = run_rq3_in_record(
+            driver_result=runs["signed_metadata_only"], secret_key=secret_key
+        )
+
+    rq4 = {}
+    if "watermark" in runs:
+        rq4["watermark"] = run_rq4_robustness(
+            driver_result=runs["watermark"], secret_key=secret_key
+        )
+
+    return {
+        "rq1_utility": _to_jsonable(run_rq1_utility(runs=runs)),
+        "rq2_capacity": {
+            label: _to_jsonable(run_rq2_capacity(result))
+            for label, result in runs.items()
+        },
+        "rq3_in_record": {label: _to_jsonable(report) for label, report in rq3.items()},
+        "rq4_robustness": {label: _to_jsonable(report) for label, report in rq4.items()},
+        "rq5_integrity": {
+            label: _to_jsonable(run_rq5_integrity(result))
+            for label, result in runs.items()
+        },
+    }
+
+
 def _write_baseline_checkpoint(args, conv, runs) -> None:
     out_path = Path(args.output)
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -279,7 +291,6 @@ def _write_baseline_checkpoint(args, conv, runs) -> None:
             "qa_count": len(conv.qa),
         },
         "baseline": latest_label,
-        "details": {latest_label: _run_details(runs[latest_label])},
     }
     out: Dict[str, Any] = {
         "config": vars(args),
@@ -289,8 +300,13 @@ def _write_baseline_checkpoint(args, conv, runs) -> None:
             "qa_count": len(conv.qa),
         },
         "completed_baselines": list(runs.keys()),
-        "details": {label: _run_details(r) for label, r in runs.items()},
     }
+    if args.output_mode == "metrics":
+        out.update(_compute_rq_metrics(runs, args.secret_key))
+        baseline_out.update(_compute_rq_metrics({latest_label: runs[latest_label]}, args.secret_key))
+    else:
+        baseline_out["details"] = {latest_label: _run_details(runs[latest_label])}
+        out["details"] = {label: _run_details(r) for label, r in runs.items()}
     checkpoint_path.write_text(
         json.dumps(_to_jsonable(out), indent=2, ensure_ascii=False),
         encoding="utf-8",

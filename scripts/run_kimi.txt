@@ -1,5 +1,5 @@
-$env:MEMMARK_BASE_URL = "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation"
-$env:MEMMARK_MODEL = "kimi-2.5"
+$env:MEMMARK_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+$env:MEMMARK_MODEL = "kimi-k2.5"
 $env:MEMMARK_API_KEY = "sk-e82ee24c2e084a6883b279540bad188d"
 
 $env:OPENAI_BASE_URL = $env:MEMMARK_BASE_URL
@@ -12,13 +12,11 @@ $env:TARGET_LLM_MODEL = $env:MEMMARK_MODEL
 $env:MEMMARK_KEY = "memmark-research-key-please-rotate"
 $env:MEMMARK_LOCOMO_PATH = "C:\桌面\agent-mem\watermark\locomo\data\locomo10.json"
 
-conda activate memmark-amem
-
 python -c "from memmark.llm import OpenAIChatClient; c=OpenAIChatClient(); print(c.model); print(repr(c.complete([{'role':'user','content':'Return OK only'}], max_tokens=20)))"
 
 python -m memmark.examples.run_locomo_full `
     --locomo $env:MEMMARK_LOCOMO_PATH `
-    --conversation 1 `
+    --conversation 0 `
     --backend amem `
     --amem-model-name "C:\桌面\models\all-MiniLM-L6-v2" `
     --llm-mode real `
@@ -28,4 +26,4 @@ python -m memmark.examples.run_locomo_full `
     --max-qa 9999 `
     --baselines watermark no_watermark signed_metadata_only random_replace `
     --output-mode metrics `
-    --output ".\results\deepseek_v4_flash\conv1_metrics.json"
+    --output ".\results\kimi_k2_5\conv0_metrics.json"

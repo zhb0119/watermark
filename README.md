@@ -660,7 +660,7 @@ memmark-v1::qwen3.5-397b-a17b@<weights-hash>::T_score=0.0::T_enum=0.7::json_mode
 
 **Question**: watermark 是否引入"写错对象 / 错误合并 / 保留过期事实 / 引入脏 memory"?
 
-**Setup**: 在每个 benchmark 上,对 `no-watermark` 与 `+ memory-watermark` 比较以下 LoCoMo-side 可直接计算的 integrity 信号:overall snapshot size、carrier-distribution(三类 τ 的决策计数比例)、evidence-grounded retrieval recall(QA-time `evidence_recall_mean`)、write_failures(memory write 路径异常数)。LoCoMo 不带 update / link / merge / delete / stale-memory / temporal ground-truth labels,这些只能在 LongMemEval `_S` knowledge-update splits 上报告,不在 RQ5 强报 fake-accuracy。
+**Setup**: 在每个 benchmark 上,对 `no-watermark` 与 `+ memory-watermark` 比较以下可直接计算的 integrity 信号:overall snapshot size、carrier-distribution(三类 τ 的决策计数比例)、evidence-grounded retrieval recall(QA-time `evidence_recall_mean`)、write_failures(memory write 路径异常数)。
 
 **Expected outcome**: 所有指标在 watermark 开启后无显著退化。这里的关键是 watermark 不能 "可验证但 memory 写坏"。
 

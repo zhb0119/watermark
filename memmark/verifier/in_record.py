@@ -78,11 +78,19 @@ def verify_in_record(
         lambda: {"bits_recovered": 0, "bits_total": 0, "leaves": 0}
     )
 
-    bit_index = 0
+    # Each audit records its ABSOLUTE position in payload_bits via
+    # ``bit_index_after`` (= prefix length after this audit's bits were
+    # appended at seal time). We must NOT use a running sum over the
+    # iterated audit list — when the attacker prunes leaves the running
+    # sum compresses positions and surviving audits get matched against
+    # wrong slices of payload_bits, killing bits_match even though
+    # Method B inclusion proofs still verify. Use each audit's stored
+    # absolute position so partial audit sets stay aligned to the
+    # original payload.
     for idx, audit in enumerate(audit_records):
         slice_len = audit.bits_embedded
-        expected = payload_bits[bit_index : bit_index + slice_len]
-        bit_index += slice_len
+        bit_start = max(0, audit.bit_index_after - slice_len)
+        expected = payload_bits[bit_start : bit_start + slice_len]
         bits_total += slice_len
 
         # The verifier always re-derives nonce_t from the supplied secret

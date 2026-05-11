@@ -47,6 +47,14 @@ class AttackOutcome:
     bit_recovery_post: float
     commitment_fail_rate: float
     merkle_proof_fail_rate: float
+    # Structural-tamper signal: how many leaves disappeared from the
+    # audit set between pre-attack (anchor.leaf_count) and post-attack
+    # (len(audits_after)). Commitment and Merkle-proof failures only
+    # fire on leaves the verifier still SEES; pruning / dedup remove
+    # leaves outright so they previously slipped past both signals.
+    # Reported as count + rate so a paper table can pick either.
+    missing_leaves_count: int = 0
+    missing_leaves_rate: float = 0.0
 
 
 @dataclass
@@ -107,6 +115,13 @@ def run_rq4_robustness(
             proof_fail = sum(
                 1 for leaf in post.leaf_results if not leaf.get("merkle_proof_valid")
             )
+            # Compare expected leaf count (anchor at seal time) to what
+            # the verifier was actually handed. Negative deltas (the
+            # poisoning attack inserts extra leaves) clamp to 0 — that
+            # case is already covered by commitment / proof signals on
+            # the injected leaves.
+            anchor_leaves = anchor.leaf_count or len(audits)
+            missing = max(0, anchor_leaves - len(attacked))
             report.outcomes.append(
                 AttackOutcome(
                     name=name,
@@ -116,6 +131,8 @@ def run_rq4_robustness(
                     bit_recovery_post=post.bit_recovery_rate,
                     commitment_fail_rate=commit_fail / n_leaves,
                     merkle_proof_fail_rate=proof_fail / n_leaves,
+                    missing_leaves_count=missing,
+                    missing_leaves_rate=missing / anchor_leaves if anchor_leaves else 0.0,
                 )
             )
     return report

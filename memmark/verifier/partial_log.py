@@ -67,11 +67,13 @@ def verify_partial_log(
     bits_total = 0
     revealed_set = set(revealed_indices)
 
-    bit_index = 0
+    # Use each audit's stored absolute position (bit_index_after - slice)
+    # rather than a running sum, so partial audit sets stay aligned to
+    # the original payload (see same note in verifier/in_record.py).
     for idx, audit in enumerate(full_audits):
         slice_len = audit.bits_embedded
-        expected = payload_bits[bit_index : bit_index + slice_len]
-        bit_index += slice_len
+        bit_start = max(0, audit.bit_index_after - slice_len)
+        expected = payload_bits[bit_start : bit_start + slice_len]
         bits_total += slice_len
 
         if idx not in revealed_set:

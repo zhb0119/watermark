@@ -583,7 +583,7 @@ memmark-v1::qwen3.5-397b-a17b@<weights-hash>::T_score=0.0::T_enum=0.7::json_mode
 | **Capacity (memory-aware)** | bits per memory decision, bits per session, bits per benchmark episode, 每百轮对话可嵌入 bit 数, 每次 memory write 平均容量 |
 | **Carrier-level breakdown** | 上述所有指标在三类 carrier `update_target / link_target / semantic_realization` 上分别报告 |
 | **Tamper detection** | commitment / Merkle proof 校验失败率 (per-attack,见 §9.5) |
-| **Memory integrity** | carrier-distribution (per-τ decision count), evidence-grounded retrieval recall (QA-time `evidence_recall_mean`), write_failures, merge correctness, delete correctness, stale-memory retention, temporal consistency |
+| **Memory integrity** | overall snapshot size, carrier-distribution (per-τ decision count), evidence-grounded retrieval recall (QA-time `evidence_recall_mean`), write_failures |
 
 ### 9.3 RQ1 — Utility Preservation
 
@@ -660,7 +660,7 @@ memmark-v1::qwen3.5-397b-a17b@<weights-hash>::T_score=0.0::T_enum=0.7::json_mode
 
 **Question**: watermark 是否引入"写错对象 / 错误合并 / 保留过期事实 / 引入脏 memory"?
 
-**Setup**: 在每个 benchmark 上,对 `no-watermark` 与 `+ memory-watermark` 比较以下 LoCoMo-side 可直接计算的 integrity 信号:carrier-distribution(三类 τ 的决策计数比例)、evidence-grounded retrieval recall(QA-time `evidence_recall_mean`)、write_failures(memory write 路径异常数)。merge correctness / delete correctness / stale-memory retention / temporal consistency 等 ground-truth-required 指标在 LongMemEval `_S` 的 knowledge-update splits 上报告,LoCoMo 不带相应 label 故不强报 fake-accuracy。
+**Setup**: 在每个 benchmark 上,对 `no-watermark` 与 `+ memory-watermark` 比较以下 LoCoMo-side 可直接计算的 integrity 信号:overall snapshot size、carrier-distribution(三类 τ 的决策计数比例)、evidence-grounded retrieval recall(QA-time `evidence_recall_mean`)、write_failures(memory write 路径异常数)。LoCoMo 不带 update / link / merge / delete / stale-memory / temporal ground-truth labels,这些只能在 LongMemEval `_S` knowledge-update splits 上报告,不在 RQ5 强报 fake-accuracy。
 
 **Expected outcome**: 所有指标在 watermark 开启后无显著退化。这里的关键是 watermark 不能 "可验证但 memory 写坏"。
 

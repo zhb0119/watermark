@@ -234,12 +234,13 @@ def score_one(prediction: str, gold: str, category: int) -> float:
     if category == 1:
         return f1_multi(prediction, gold)
     if category == 5:
-        # adversarial / abstention
-        text = (prediction or "").lower()
-        if "no information available" in text or "not mentioned" in text \
-                or "i don't know" in text:
-            return 1.0
-        return 0.0
+        # Adversarial: gold is now ``adversarial_answer`` (loader fix),
+        # cat-5 prompt is A/B with the gold as one option. Compare with
+        # set-based F1 same as the rest — this matches A-mem Table 1's
+        # uniform F1 computation across categories. The previous
+        # hard-coded "did the model say not-mentioned?" check made
+        # cat-5 effectively a binary heuristic with empty gold.
+        return f1_score(prediction, gold)
     # unknown → fallback to plain F1
     return f1_score(prediction, gold)
 

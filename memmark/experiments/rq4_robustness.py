@@ -201,7 +201,55 @@ def _attack_manual_edits(
 
 
 def _attack_dedup(audits: List[AuditRecord], *, strength: float, seed: int):
-    return _attack_pruning(audits, strength=strength * 0.5, seed=seed)
+    """Real dedup: find audits whose selected candidate text matches
+    another audit's selected text (i.e. the system stored two notes
+    with the same content) and drop the duplicates, keeping one
+    canonical leaf per content group. ``strength`` controls what
+    fraction of duplicate-eligible groups we collapse (so we can sweep
+    strength even when there are few exact duplicates in a real run).
+    """
+
+    def _selected_text(audit: AuditRecord) -> str:
+        cands = audit.candidates or []
+        sel = next(
+            (c for c in cands if c.candidate_id == audit.selected_candidate_id),
+            None,
+        )
+        if sel is None:
+            return audit.commitment  # fallback
+        return str(sel.payload.get("text", "")) or audit.commitment
+
+    rng = random.Random(seed)
+    # Group indices by selected-text bucket
+    buckets: Dict[str, List[int]] = {}
+    for i, a in enumerate(audits):
+        buckets.setdefault(_selected_text(a), []).append(i)
+    duplicate_groups = [idxs for idxs in buckets.values() if len(idxs) > 1]
+    # If the trace has no real duplicates, synthesize a fraction of
+    # near-duplicate groups by pairing random audits — this keeps the
+    # strength sweep meaningful on conv traces with low natural dedup.
+    if not duplicate_groups:
+        n = len(audits)
+        if n < 2:
+            return list(audits), 0
+        target_pairs = max(1, int(round(strength * n / 2)))
+        indices = list(range(n))
+        rng.shuffle(indices)
+        duplicate_groups = [
+            indices[i : i + 2]
+            for i in range(0, min(2 * target_pairs, n - n % 2), 2)
+        ]
+
+    rng.shuffle(duplicate_groups)
+    n_groups = len(duplicate_groups)
+    n_collapse = max(1, int(round(strength * n_groups)))
+    drop: set = set()
+    for group in duplicate_groups[:n_collapse]:
+        # Keep the first; drop the rest as "deduped"
+        for victim_idx in group[1:]:
+            drop.add(victim_idx)
+    out = [a for i, a in enumerate(audits) if i not in drop]
+    return out, len(drop)
 
 
 def _attack_paraphrase_rewrite(
@@ -241,6 +289,14 @@ def _attack_poisoning(
 def _attack_edge_relabel(
     audits: List[AuditRecord], *, strength: float, seed: int
 ):
+    """KGMark-style edge relabel: rewrite the SELECTED candidate's
+    payload text (i.e. the actual edge label that ended up in the
+    graph) so commitment recompute fails AND any decoder that reads
+    the selected payload sees a tampered string. Previous version
+    relabeled only ``candidates[0]`` which is a no-op when the chosen
+    candidate isn't index 0 (which is the common case).
+    """
+
     rng = random.Random(seed)
     n = len(audits)
     affected = max(1, int(round(strength * n)))
@@ -249,15 +305,17 @@ def _attack_edge_relabel(
     for idx in indices:
         rec = copy.deepcopy(out[idx])
         candidates = list(rec.candidates or [])
-        if candidates:
-            target = candidates[0]
-            if hasattr(target, "payload"):
-                new_payload = dict(target.payload)
-                if "text" in new_payload:
-                    new_payload["text"] = new_payload["text"] + " [RELABEL]"
-                else:
-                    new_payload["text"] = "[RELABEL]"
-                object.__setattr__(target, "payload", new_payload)
+        target = next(
+            (c for c in candidates if c.candidate_id == rec.selected_candidate_id),
+            candidates[0] if candidates else None,
+        )
+        if target is not None and hasattr(target, "payload"):
+            new_payload = dict(target.payload)
+            existing = new_payload.get("text")
+            new_payload["text"] = (
+                f"{existing} [RELABEL]" if existing else "[RELABEL]"
+            )
+            object.__setattr__(target, "payload", new_payload)
         out[idx] = rec
     return out, affected
 
@@ -265,6 +323,16 @@ def _attack_edge_relabel(
 def _attack_subgraph_reanchor(
     audits: List[AuditRecord], *, strength: float, seed: int
 ):
+    """KGMark-style subgraph reanchor: an attacker re-roots a portion
+    of the KG so each affected audit's binding context (which records
+    the cluster the new memory was attached to) shifts. We mutate
+    ``audit.context`` (the JSON-serialized ctx_payload) and the
+    ``link_target``-bearing candidate set so commitment recompute
+    fails — a faithful "the attached subgraph root changed" signal.
+    Previous implementation only tweaked ``round_num`` which is not
+    folded into the commitment hash, so the attack was a no-op.
+    """
+
     rng = random.Random(seed)
     n = len(audits)
     affected = max(1, int(round(strength * n)))
@@ -272,8 +340,16 @@ def _attack_subgraph_reanchor(
     out = list(audits)
     for idx in indices:
         rec = copy.deepcopy(out[idx])
-        # Replace round_num to simulate subgraph re-rooting
-        object.__setattr__(rec, "round_num", rec.round_num + 1000)
+        # 1. Mutate ctx_payload to mark the reanchor (changes commitment hash)
+        new_ctx = (rec.context or "") + " [REANCHOR]"
+        object.__setattr__(rec, "context", new_ctx)
+        # 2. Re-root: rotate all candidate ids by one (the chosen anchor
+        #    no longer corresponds to its original index in the candidate
+        #    list — a structural shift on the KG side).
+        candidates = list(rec.candidates or [])
+        if len(candidates) >= 2:
+            rotated = candidates[1:] + candidates[:1]
+            object.__setattr__(rec, "candidates", rotated)
         out[idx] = rec
     return out, affected
 

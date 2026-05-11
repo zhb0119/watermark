@@ -30,17 +30,25 @@ RQ_ORDER = ("RQ1 Utility", "RQ2 Capacity", "RQ3 Verification", "RQ4 Robustness",
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("input", type=Path)
+    parser.add_argument("inputs", nargs="+", type=Path)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--baseline", choices=BASELINES)
     args = parser.parse_args()
-    data = json.loads(args.input.read_text(encoding="utf-8"))
-    runs = _runs_from_json(data, args.baseline)
-    secret_key = (data.get("config") or {}).get("secret_key", "memmark-default-dev-key")
-    rows = _build_rows(runs, secret_key)
-    output = args.output or args.input.with_name(args.input.stem + "_rq_metrics_summary.md")
+    rows = []
+    for input_path in args.inputs:
+        data = json.loads(input_path.read_text(encoding="utf-8"))
+        if _has_precomputed_rq_metrics(data):
+            rows.extend(_build_rows_from_metrics(data, args.baseline))
+        else:
+            runs = _runs_from_json(data, args.baseline)
+            secret_key = (data.get("config") or {}).get("secret_key", "memmark-default-dev-key")
+            rows.extend(_build_rows(runs, secret_key))
+    if len(args.inputs) == 1:
+        output = args.output or args.inputs[0].with_name(args.inputs[0].stem + "_rq_metrics_summary.md")
+    else:
+        output = args.output or args.inputs[0].with_name("combined_rq_metrics_summary.md")
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(_markdown(rows, args.input), encoding="utf-8")
+    output.write_text(_markdown(rows, args.inputs), encoding="utf-8")
     print(output)
 
 
@@ -53,6 +61,118 @@ def _runs_from_json(data: dict[str, Any], only: str | None) -> dict[str, LoCoMoD
     else:
         labels = [b for b in BASELINES if b in details]
     return {label: _result_from_detail(data, details[label]) for label in labels}
+
+
+def _has_precomputed_rq_metrics(data: dict[str, Any]) -> bool:
+    return any(key in data for key in ("rq1_utility", "rq2_capacity", "rq3_in_record", "rq4_robustness", "rq5_integrity"))
+
+
+def _metric_labels(data: dict[str, Any], only: str | None) -> list[str]:
+    if only:
+        return [only]
+    if isinstance(data.get("baseline"), str):
+        return [data["baseline"]]
+    labels = []
+    for section in ("rq2_capacity", "rq3_in_record", "rq4_robustness", "rq5_integrity"):
+        for label in (data.get(section) or {}).keys():
+            if label not in labels:
+                labels.append(label)
+    for row in ((data.get("rq1_utility") or {}).get("rows") or []):
+        label = row.get("label")
+        if label and label not in labels:
+            labels.append(label)
+    return labels
+
+
+def _build_rows_from_metrics(data: dict[str, Any], only: str | None) -> list[dict[str, Any]]:
+    labels = set(_metric_labels(data, only))
+    rows: list[dict[str, Any]] = []
+    rows.extend(_rq1_from_metrics(data.get("rq1_utility") or {}, labels))
+    rows.extend(_rq2_from_metrics(data.get("rq2_capacity") or {}, labels))
+    rows.extend(_rq3_from_metrics(data.get("rq3_in_record") or {}, labels))
+    rows.extend(_rq4_from_metrics(data.get("rq4_robustness") or {}, labels))
+    rows.extend(_rq5_from_metrics(data.get("rq5_integrity") or {}, labels))
+    return rows
+
+
+def _rq1_from_metrics(report: dict[str, Any], labels: set[str]) -> list[dict[str, Any]]:
+    rows = []
+    for item in report.get("rows") or []:
+        label = item.get("label")
+        if label not in labels:
+            continue
+        for field in RQ1_FIELDS:
+            rows.append(_row("RQ1 Utility", "overall", "", field, label, item.get(field)))
+        for cat, metrics in (item.get("qa_by_category") or {}).items():
+            for metric, value in metrics.items():
+                rows.append(_row("RQ1 Utility", "qa_by_category", f"category={cat}", metric, label, value))
+    for label, values in (report.get("deltas") or {}).items():
+        if label not in labels:
+            continue
+        for field in RQ1_DELTA_FIELDS:
+            rows.append(_row("RQ1 Utility", "deltas_vs_no_watermark", "base=no_watermark", field, label, values.get(field)))
+    return rows
+
+
+def _rq2_from_metrics(report: dict[str, Any], labels: set[str]) -> list[dict[str, Any]]:
+    rows = []
+    for label, values in report.items():
+        if label not in labels:
+            continue
+        for field in RQ2_FIELDS:
+            rows.append(_row("RQ2 Capacity", "overall", "", field, label, (values.get("overall") or {}).get(field)))
+        for carrier, metrics in (values.get("by_carrier") or {}).items():
+            for metric, value in metrics.items():
+                rows.append(_row("RQ2 Capacity", "by_carrier", f"carrier={carrier}", metric, label, value))
+    return rows
+
+
+def _rq3_from_metrics(report: dict[str, Any], labels: set[str]) -> list[dict[str, Any]]:
+    rows = []
+    for label, values in report.items():
+        if label not in labels:
+            continue
+        for group, fields in RQ3_GROUPS.items():
+            if group == "r2":
+                for item, metrics in (values.get("r2") or {}).items():
+                    for field in fields:
+                        rows.append(_row("RQ3 Verification", "r2", item, field, label, metrics.get(field)))
+            elif group == "r3_carrier_breakdown":
+                for carrier, metrics in (values.get(group) or {}).items():
+                    for field in fields:
+                        rows.append(_row("RQ3 Verification", group, f"carrier={carrier}", field, label, metrics.get(field)))
+            else:
+                metrics = values.get(group) or {}
+                for field in fields:
+                    rows.append(_row("RQ3 Verification", group, "", field, label, metrics.get(field)))
+    return rows
+
+
+def _rq4_from_metrics(report: dict[str, Any], labels: set[str]) -> list[dict[str, Any]]:
+    rows = []
+    for label, values in report.items():
+        if label not in labels:
+            continue
+        rows.append(_row("RQ4 Robustness", "overall", "", "pre_recovery", label, values.get("pre_recovery")))
+        for outcome in values.get("outcomes") or []:
+            metrics = dict(outcome)
+            metrics["tamper_detection_rate"] = max(metrics.get("commitment_fail_rate", 0.0), metrics.get("merkle_proof_fail_rate", 0.0))
+            item = f"attack={metrics.get('name')};strength={metrics.get('strength')}"
+            for field in RQ4_FIELDS:
+                rows.append(_row("RQ4 Robustness", "outcomes", item, field, label, metrics.get(field)))
+    return rows
+
+
+def _rq5_from_metrics(report: dict[str, Any], labels: set[str]) -> list[dict[str, Any]]:
+    rows = []
+    for label, values in report.items():
+        if label not in labels:
+            continue
+        for carrier, count in (values.get("by_carrier_counts") or {}).items():
+            rows.append(_row("RQ5 Integrity", "by_carrier_counts", f"carrier={carrier}", "count", label, count))
+        for field in RQ5_FIELDS:
+            rows.append(_row("RQ5 Integrity", "overall", "", field, label, values.get(field)))
+    return rows
 
 
 def _result_from_detail(data: dict[str, Any], detail: dict[str, Any]) -> LoCoMoDriverResult:
@@ -210,8 +330,12 @@ def _row(rq: str, group: str, item: str, metric: str, baseline: str, value: Any)
     return {"rq": rq, "group": group, "item": item, "metric": metric, "baseline": baseline, "value": value}
 
 
-def _markdown(rows: list[dict[str, Any]], source: Path) -> str:
-    lines = ["# LoCoMo RQ Metrics Summary", "", f"- **File**: `{source}`", "- **Cell value**: numeric values are from this JSON file; empty means baseline has no metric.", ""]
+def _markdown(rows: list[dict[str, Any]], source: Path | list[Path]) -> str:
+    if isinstance(source, list):
+        source_line = ", ".join(f"`{path}`" for path in source)
+    else:
+        source_line = f"`{source}`"
+    lines = ["# LoCoMo RQ Metrics Summary", "", f"- **File**: {source_line}", "- **Cell value**: numeric values are from this JSON file; empty means baseline has no metric.", ""]
     for rq in RQ_ORDER:
         subset = [r for r in rows if r["rq"] == rq]
         if not subset:

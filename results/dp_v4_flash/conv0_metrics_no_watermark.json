@@ -1,0 +1,146 @@
+{
+  "config": {
+    "locomo": "C:\\桌面\\agent-mem\\watermark\\locomo\\data\\locomo10.json",
+    "conversation": 0,
+    "max_sessions": 999,
+    "max_qa": 9999,
+    "backend": "amem",
+    "baselines": [
+      "watermark",
+      "no_watermark",
+      "signed_metadata_only",
+      "random_replace"
+    ],
+    "payload_bits": "1011010011101101001110110100111011010011",
+    "secret_key": "memmark-research-key-please-rotate",
+    "amem_model_name": "C:\\桌面\\models\\all-MiniLM-L6-v2",
+    "output": ".\\results\\dp_v4_flash\\conv0_metrics.json",
+    "output_mode": "metrics",
+    "async_assess": true,
+    "async_max_concurrency": 4,
+    "llm_mode": "real",
+    "progress": true
+  },
+  "conversation": {
+    "sample_id": "conv-26",
+    "session_count": 19,
+    "qa_count": 199
+  },
+  "baseline": "no_watermark",
+  "rq1_utility": {
+    "rows": [
+      {
+        "label": "no_watermark",
+        "qa_accuracy": 0.36683417085427134,
+        "qa_f1": 0.35761621674780203,
+        "qa_bleu1": 0.4020651709226703,
+        "qa_rougeL": 0.3477329637939763,
+        "qa_count": 199,
+        "qa_by_category": {
+          "2": {
+            "n": 37.0,
+            "f1": 0.27316572316572313,
+            "bleu1": 0.34465894465894464,
+            "rougeL": 0.30411765411765407,
+            "judge_acc": 0.32432432432432434
+          },
+          "3": {
+            "n": 13.0,
+            "f1": 0.40176105945336715,
+            "bleu1": 0.608974358974359,
+            "rougeL": 0.23637644406875175,
+            "judge_acc": 0.38461538461538464
+          },
+          "1": {
+            "n": 32.0,
+            "f1": 0.2642428751803752,
+            "bleu1": 0.33422619047619045,
+            "rougeL": 0.25402612433862437,
+            "judge_acc": 0.3125
+          },
+          "4": {
+            "n": 70.0,
+            "f1": 0.4665820186641652,
+            "bleu1": 0.5026020408163264,
+            "rougeL": 0.46324007702967557,
+            "judge_acc": 0.45714285714285713
+          },
+          "5": {
+            "n": 47.0,
+            "f1": 0.3131720912877338,
+            "bleu1": 0.28647958387622946,
+            "rougeL": 0.3046376904008727,
+            "judge_acc": 0.2978723404255319
+          }
+        },
+        "memory_count": 419,
+        "write_failures": 3,
+        "bits_embedded": 0,
+        "capacity_bits_per_decision": 0.0
+      }
+    ],
+    "deltas": {}
+  },
+  "rq2_capacity": {
+    "no_watermark": {
+      "overall": {
+        "decisions": 838.0,
+        "bits_embedded": 0.0,
+        "bits_per_decision": 0.0,
+        "avg_candidate_set_size": 2.9988066825775657,
+        "avg_entropy": 1.0736269495004858,
+        "acceptance_rate": 1.0
+      },
+      "by_carrier": {
+        "semantic_realization": {
+          "decisions": 433.0,
+          "bits_embedded": 0.0,
+          "bits_per_decision": 0.0,
+          "avg_candidate_set_size": 2.995381062355658,
+          "avg_entropy": 1.0372565150982713,
+          "acceptance_rate": 1.0
+        },
+        "link_target": {
+          "decisions": 204.0,
+          "bits_embedded": 0.0,
+          "bits_per_decision": 0.0,
+          "avg_candidate_set_size": 3.0049019607843137,
+          "avg_entropy": 1.113859627391044,
+          "acceptance_rate": 1.0
+        },
+        "update_target": {
+          "decisions": 201.0,
+          "bits_embedded": 0.0,
+          "bits_per_decision": 0.0,
+          "avg_candidate_set_size": 3.0,
+          "avg_entropy": 1.1111440231646066,
+          "acceptance_rate": 1.0
+        }
+      }
+    }
+  },
+  "rq3_in_record": {},
+  "rq4_robustness": {},
+  "rq5_integrity": {
+    "no_watermark": {
+      "duplication_rate": 0.0,
+      "duplicate_count": 0,
+      "update_target_accuracy": 1.0,
+      "update_target_total": 201,
+      "update_target_correct": 201,
+      "link_target_accuracy": 1.0,
+      "link_target_total": 204,
+      "link_target_correct": 204,
+      "contradiction_rate": 0.0,
+      "overall_records": 419,
+      "by_carrier_counts": {
+        "semantic_realization": 433,
+        "link_target": 204,
+        "update_target": 201
+      },
+      "evidence_recall_mean": 0.6142131979695431,
+      "evidence_required_qas": 197,
+      "qa_with_full_evidence": 110
+    }
+  }
+}

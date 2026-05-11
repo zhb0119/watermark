@@ -46,12 +46,17 @@ class OpenAIChatClient:
         }
         if max_tokens is not None:
             kwargs["max_tokens"] = max_tokens
-        if self.model.startswith(("kimi-", "kimi/")):
-            kwargs["extra_body"] = {"enable_thinking": False}
-        elif self.model.startswith("deepseek-v4-"):
-            kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
+        kwargs["extra_body"] = self.disable_thinking_extra_body()
         response = self.client.chat.completions.create(**kwargs)
         return response.choices[0].message.content or ""
+
+    @staticmethod
+    def disable_thinking_extra_body() -> Dict[str, Any]:
+        return {
+            "enable_thinking": False,
+            "thinking": {"type": "disabled"},
+            "reasoning": {"enabled": False},
+        }
 
     @staticmethod
     def _default_headers() -> Dict[str, str]:

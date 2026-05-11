@@ -1,0 +1,531 @@
+{
+  "config": {
+    "locomo": "C:\\桌面\\agent-mem\\watermark\\locomo\\data\\locomo10.json",
+    "conversation": 0,
+    "max_sessions": 999,
+    "max_qa": 9999,
+    "backend": "amem",
+    "baselines": [
+      "watermark",
+      "no_watermark",
+      "signed_metadata_only",
+      "random_replace"
+    ],
+    "payload_bits": "1011010011101101001110110100111011010011",
+    "secret_key": "memmark-research-key-please-rotate",
+    "amem_model_name": "C:\\桌面\\models\\all-MiniLM-L6-v2",
+    "output": ".\\results\\dp_v4_flash\\conv0_metrics.json",
+    "output_mode": "metrics",
+    "async_assess": true,
+    "async_max_concurrency": 4,
+    "llm_mode": "real",
+    "progress": true
+  },
+  "conversation": {
+    "sample_id": "conv-26",
+    "session_count": 19,
+    "qa_count": 199
+  },
+  "baseline": "watermark",
+  "rq1_utility": {
+    "rows": [
+      {
+        "label": "watermark",
+        "qa_accuracy": 0.3165829145728643,
+        "qa_f1": 0.3338004463146453,
+        "qa_bleu1": 0.379488456890044,
+        "qa_rougeL": 0.32258364933353156,
+        "qa_count": 199,
+        "qa_by_category": {
+          "2": {
+            "n": 37.0,
+            "f1": 0.2774696774696775,
+            "bleu1": 0.3524024024024024,
+            "rougeL": 0.30784290784290785,
+            "judge_acc": 0.2972972972972973
+          },
+          "3": {
+            "n": 13.0,
+            "f1": 0.3738001314924392,
+            "bleu1": 0.5336538461538461,
+            "rougeL": 0.2710398482973734,
+            "judge_acc": 0.38461538461538464
+          },
+          "1": {
+            "n": 32.0,
+            "f1": 0.24844569493006993,
+            "bleu1": 0.3645632354953476,
+            "rougeL": 0.2525450152917259,
+            "judge_acc": 0.28125
+          },
+          "4": {
+            "n": 70.0,
+            "f1": 0.42404104440472523,
+            "bleu1": 0.44480859010270773,
+            "rougeL": 0.3993106515728287,
+            "judge_acc": 0.38571428571428573
+          },
+          "5": {
+            "n": 47.0,
+            "f1": 0.2907951849945027,
+            "bleu1": 0.27104657849338704,
+            "rougeL": 0.2818564787209804,
+            "judge_acc": 0.23404255319148937
+          }
+        },
+        "memory_count": 418,
+        "write_failures": 4,
+        "bits_embedded": 40,
+        "capacity_bits_per_decision": 0.04778972520908005
+      }
+    ],
+    "deltas": {}
+  },
+  "rq2_capacity": {
+    "watermark": {
+      "overall": {
+        "decisions": 837.0,
+        "bits_embedded": 40.0,
+        "bits_per_decision": 0.04778972520908005,
+        "avg_candidate_set_size": 2.996415770609319,
+        "avg_entropy": 1.0713055748716123,
+        "acceptance_rate": 1.0
+      },
+      "by_carrier": {
+        "semantic_realization": {
+          "decisions": 430.0,
+          "bits_embedded": 19.0,
+          "bits_per_decision": 0.044186046511627906,
+          "avg_candidate_set_size": 2.9953488372093022,
+          "avg_entropy": 1.04233639540807,
+          "acceptance_rate": 1.0
+        },
+        "link_target": {
+          "decisions": 243.0,
+          "bits_embedded": 13.0,
+          "bits_per_decision": 0.053497942386831275,
+          "avg_candidate_set_size": 3.0,
+          "avg_entropy": 1.1179334648727912,
+          "acceptance_rate": 1.0
+        },
+        "update_target": {
+          "decisions": 164.0,
+          "bits_embedded": 8.0,
+          "bits_per_decision": 0.04878048780487805,
+          "avg_candidate_set_size": 2.9939024390243905,
+          "avg_entropy": 1.07817246449991,
+          "acceptance_rate": 1.0
+        }
+      }
+    }
+  },
+  "rq3_in_record": {
+    "watermark": {
+      "r1": {
+        "bit_recovery_rate": 1.0,
+        "commitment_pass_rate": 1.0,
+        "bits_total": 40.0,
+        "bits_recovered": 40.0
+      },
+      "r2": {
+        "r=0.9": {
+          "kept_leaves": 753.0,
+          "anchor_signature_valid": 1.0,
+          "root_matches": 1.0,
+          "bit_recovery_rate": 0.95,
+          "bits_recovered": 38.0,
+          "bits_total": 40.0
+        },
+        "r=0.7": {
+          "kept_leaves": 586.0,
+          "anchor_signature_valid": 1.0,
+          "root_matches": 1.0,
+          "bit_recovery_rate": 0.725,
+          "bits_recovered": 29.0,
+          "bits_total": 40.0
+        },
+        "r=0.5": {
+          "kept_leaves": 418.0,
+          "anchor_signature_valid": 1.0,
+          "root_matches": 1.0,
+          "bit_recovery_rate": 0.575,
+          "bits_recovered": 23.0,
+          "bits_total": 40.0
+        },
+        "r=0.3": {
+          "kept_leaves": 251.0,
+          "anchor_signature_valid": 1.0,
+          "root_matches": 1.0,
+          "bit_recovery_rate": 0.275,
+          "bits_recovered": 11.0,
+          "bits_total": 40.0
+        },
+        "r=0.1": {
+          "kept_leaves": 84.0,
+          "anchor_signature_valid": 1.0,
+          "root_matches": 1.0,
+          "bit_recovery_rate": 0.0,
+          "bits_recovered": 0.0,
+          "bits_total": 40.0
+        }
+      },
+      "r3": {
+        "anchor_signature_valid": 1.0,
+        "root_matches": 1.0,
+        "bit_recovery_rate": 1.0,
+        "bits_recovered": 40.0,
+        "bits_total": 40.0
+      },
+      "r3_wrong_key": {
+        "anchor_signature_valid": 0.0,
+        "bit_recovery_rate": 0.15
+      },
+      "r3_carrier_breakdown": {
+        "semantic_realization": {
+          "leaves": 430,
+          "bits_total": 19,
+          "bits_recovered": 19,
+          "bit_recovery_rate": 1.0
+        },
+        "link_target": {
+          "leaves": 243,
+          "bits_total": 13,
+          "bits_recovered": 13,
+          "bit_recovery_rate": 1.0
+        },
+        "update_target": {
+          "leaves": 164,
+          "bits_total": 8,
+          "bits_recovered": 8,
+          "bit_recovery_rate": 1.0
+        }
+      }
+    }
+  },
+  "rq4_robustness": {
+    "watermark": {
+      "pre_recovery": 1.0,
+      "outcomes": [
+        {
+          "name": "compaction",
+          "strength": 0.1,
+          "leaves_affected": 84,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 0.9,
+          "commitment_fail_rate": 0.1003584229390681,
+          "merkle_proof_fail_rate": 0.0,
+          "missing_leaves_count": 0,
+          "missing_leaves_rate": 0.0
+        },
+        {
+          "name": "compaction",
+          "strength": 0.3,
+          "leaves_affected": 251,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 0.625,
+          "commitment_fail_rate": 0.2998805256869773,
+          "merkle_proof_fail_rate": 0.0,
+          "missing_leaves_count": 0,
+          "missing_leaves_rate": 0.0
+        },
+        {
+          "name": "compaction",
+          "strength": 0.5,
+          "leaves_affected": 418,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 0.5,
+          "commitment_fail_rate": 0.4994026284348865,
+          "merkle_proof_fail_rate": 0.0,
+          "missing_leaves_count": 0,
+          "missing_leaves_rate": 0.0
+        },
+        {
+          "name": "supersession",
+          "strength": 0.1,
+          "leaves_affected": 84,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 0.9,
+          "commitment_fail_rate": 0.1003584229390681,
+          "merkle_proof_fail_rate": 0.0,
+          "missing_leaves_count": 0,
+          "missing_leaves_rate": 0.0
+        },
+        {
+          "name": "supersession",
+          "strength": 0.3,
+          "leaves_affected": 251,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 0.625,
+          "commitment_fail_rate": 0.2998805256869773,
+          "merkle_proof_fail_rate": 0.0,
+          "missing_leaves_count": 0,
+          "missing_leaves_rate": 0.0
+        },
+        {
+          "name": "supersession",
+          "strength": 0.5,
+          "leaves_affected": 418,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 0.425,
+          "commitment_fail_rate": 0.4994026284348865,
+          "merkle_proof_fail_rate": 0.0,
+          "missing_leaves_count": 0,
+          "missing_leaves_rate": 0.0
+        },
+        {
+          "name": "pruning",
+          "strength": 0.1,
+          "leaves_affected": 84,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 1.0,
+          "commitment_fail_rate": 0.0,
+          "merkle_proof_fail_rate": 0.0,
+          "missing_leaves_count": 84,
+          "missing_leaves_rate": 0.1003584229390681
+        },
+        {
+          "name": "pruning",
+          "strength": 0.3,
+          "leaves_affected": 251,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 1.0,
+          "commitment_fail_rate": 0.0,
+          "merkle_proof_fail_rate": 0.0,
+          "missing_leaves_count": 251,
+          "missing_leaves_rate": 0.2998805256869773
+        },
+        {
+          "name": "pruning",
+          "strength": 0.5,
+          "leaves_affected": 418,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 1.0,
+          "commitment_fail_rate": 0.0,
+          "merkle_proof_fail_rate": 0.0,
+          "missing_leaves_count": 418,
+          "missing_leaves_rate": 0.4994026284348865
+        },
+        {
+          "name": "manual_edits",
+          "strength": 0.1,
+          "leaves_affected": 84,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 0.9,
+          "commitment_fail_rate": 0.1003584229390681,
+          "merkle_proof_fail_rate": 0.0,
+          "missing_leaves_count": 0,
+          "missing_leaves_rate": 0.0
+        },
+        {
+          "name": "manual_edits",
+          "strength": 0.3,
+          "leaves_affected": 251,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 0.75,
+          "commitment_fail_rate": 0.2998805256869773,
+          "merkle_proof_fail_rate": 0.0,
+          "missing_leaves_count": 0,
+          "missing_leaves_rate": 0.0
+        },
+        {
+          "name": "manual_edits",
+          "strength": 0.5,
+          "leaves_affected": 418,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 0.45,
+          "commitment_fail_rate": 0.4994026284348865,
+          "merkle_proof_fail_rate": 0.0,
+          "missing_leaves_count": 0,
+          "missing_leaves_rate": 0.0
+        },
+        {
+          "name": "dedup",
+          "strength": 0.1,
+          "leaves_affected": 10,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 1.0,
+          "commitment_fail_rate": 0.0,
+          "merkle_proof_fail_rate": 0.0,
+          "missing_leaves_count": 10,
+          "missing_leaves_rate": 0.011947431302270013
+        },
+        {
+          "name": "dedup",
+          "strength": 0.3,
+          "leaves_affected": 10,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 1.0,
+          "commitment_fail_rate": 0.0,
+          "merkle_proof_fail_rate": 0.0,
+          "missing_leaves_count": 10,
+          "missing_leaves_rate": 0.011947431302270013
+        },
+        {
+          "name": "dedup",
+          "strength": 0.5,
+          "leaves_affected": 10,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 1.0,
+          "commitment_fail_rate": 0.0,
+          "merkle_proof_fail_rate": 0.0,
+          "missing_leaves_count": 10,
+          "missing_leaves_rate": 0.011947431302270013
+        },
+        {
+          "name": "paraphrase_rewrite",
+          "strength": 0.1,
+          "leaves_affected": 84,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 0.875,
+          "commitment_fail_rate": 0.1003584229390681,
+          "merkle_proof_fail_rate": 0.0,
+          "missing_leaves_count": 0,
+          "missing_leaves_rate": 0.0
+        },
+        {
+          "name": "paraphrase_rewrite",
+          "strength": 0.3,
+          "leaves_affected": 251,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 0.675,
+          "commitment_fail_rate": 0.2998805256869773,
+          "merkle_proof_fail_rate": 0.0,
+          "missing_leaves_count": 0,
+          "missing_leaves_rate": 0.0
+        },
+        {
+          "name": "paraphrase_rewrite",
+          "strength": 0.5,
+          "leaves_affected": 418,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 0.475,
+          "commitment_fail_rate": 0.4994026284348865,
+          "merkle_proof_fail_rate": 0.0,
+          "missing_leaves_count": 0,
+          "missing_leaves_rate": 0.0
+        },
+        {
+          "name": "poisoning",
+          "strength": 0.1,
+          "leaves_affected": 84,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 0.6896551724137931,
+          "commitment_fail_rate": 0.09120521172638436,
+          "merkle_proof_fail_rate": 0.0,
+          "missing_leaves_count": 0,
+          "missing_leaves_rate": 0.0
+        },
+        {
+          "name": "poisoning",
+          "strength": 0.3,
+          "leaves_affected": 251,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 0.5970149253731343,
+          "commitment_fail_rate": 0.23069852941176472,
+          "merkle_proof_fail_rate": 0.0,
+          "missing_leaves_count": 0,
+          "missing_leaves_rate": 0.0
+        },
+        {
+          "name": "poisoning",
+          "strength": 0.5,
+          "leaves_affected": 418,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 0.547945205479452,
+          "commitment_fail_rate": 0.33306772908366533,
+          "merkle_proof_fail_rate": 0.0,
+          "missing_leaves_count": 0,
+          "missing_leaves_rate": 0.0
+        },
+        {
+          "name": "edge_relabel",
+          "strength": 0.1,
+          "leaves_affected": 84,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 0.9,
+          "commitment_fail_rate": 0.1003584229390681,
+          "merkle_proof_fail_rate": 0.0,
+          "missing_leaves_count": 0,
+          "missing_leaves_rate": 0.0
+        },
+        {
+          "name": "edge_relabel",
+          "strength": 0.3,
+          "leaves_affected": 251,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 0.675,
+          "commitment_fail_rate": 0.2998805256869773,
+          "merkle_proof_fail_rate": 0.0,
+          "missing_leaves_count": 0,
+          "missing_leaves_rate": 0.0
+        },
+        {
+          "name": "edge_relabel",
+          "strength": 0.5,
+          "leaves_affected": 418,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 0.525,
+          "commitment_fail_rate": 0.4994026284348865,
+          "merkle_proof_fail_rate": 0.0,
+          "missing_leaves_count": 0,
+          "missing_leaves_rate": 0.0
+        },
+        {
+          "name": "subgraph_reanchor",
+          "strength": 0.1,
+          "leaves_affected": 84,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 0.975,
+          "commitment_fail_rate": 0.1003584229390681,
+          "merkle_proof_fail_rate": 0.0,
+          "missing_leaves_count": 0,
+          "missing_leaves_rate": 0.0
+        },
+        {
+          "name": "subgraph_reanchor",
+          "strength": 0.3,
+          "leaves_affected": 251,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 0.85,
+          "commitment_fail_rate": 0.2998805256869773,
+          "merkle_proof_fail_rate": 0.0,
+          "missing_leaves_count": 0,
+          "missing_leaves_rate": 0.0
+        },
+        {
+          "name": "subgraph_reanchor",
+          "strength": 0.5,
+          "leaves_affected": 418,
+          "bit_recovery_pre": 1.0,
+          "bit_recovery_post": 0.55,
+          "commitment_fail_rate": 0.4994026284348865,
+          "merkle_proof_fail_rate": 0.0,
+          "missing_leaves_count": 0,
+          "missing_leaves_rate": 0.0
+        }
+      ]
+    }
+  },
+  "rq5_integrity": {
+    "watermark": {
+      "duplication_rate": 0.0,
+      "duplicate_count": 0,
+      "update_target_accuracy": 1.0,
+      "update_target_total": 164,
+      "update_target_correct": 164,
+      "link_target_accuracy": 1.0,
+      "link_target_total": 243,
+      "link_target_correct": 243,
+      "contradiction_rate": 0.0,
+      "overall_records": 418,
+      "by_carrier_counts": {
+        "semantic_realization": 430,
+        "link_target": 243,
+        "update_target": 164
+      },
+      "evidence_recall_mean": 0.5287648054145515,
+      "evidence_required_qas": 197,
+      "qa_with_full_evidence": 92
+    }
+  }
+}

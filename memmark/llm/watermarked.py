@@ -557,8 +557,7 @@ class _AMemInnerWrapper:
             }
             if response_format:
                 kwargs["response_format"] = self._coerce_response_format(response_format)
-            if str(self._memmark_client.model).startswith("deepseek-v4-"):
-                kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
+            kwargs["extra_body"] = self._memmark_client.disable_thinking_extra_body()
             try:
                 if os.getenv("MEMMARK_DEBUG_LLM"):
                     base_url = getattr(getattr(self._memmark_client.client, "_client", None), "base_url", "")

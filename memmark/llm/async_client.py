@@ -74,6 +74,11 @@ class AsyncOpenAIChatClient:
         }
         if max_tokens is not None:
             kwargs["max_tokens"] = max_tokens
+        kwargs["extra_body"] = {
+            "enable_thinking": False,
+            "thinking": {"type": "disabled"},
+            "reasoning": {"enabled": False},
+        }
         async with self._sem:
             response = await self.client.chat.completions.create(**kwargs)
         return response.choices[0].message.content or ""

@@ -1,24 +1,23 @@
-$env:MEMMARK_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-$env:MEMMARK_MODEL = "deepseek-v4-flash"
-$env:MEMMARK_API_KEY = "sk-6c1d6d677c9940f58ce63544e4e9eff0"
+# 1. 生成模型配置 (DashScope DeepSeek)
+$env:OPENAI_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+$env:OPENAI_MODEL = "deepseek-v4-flash"
+$env:OPENAI_API_KEY = "sk-e82ee24c2e084a6883b279540bad188d"
 
-$env:OPENAI_BASE_URL = $env:MEMMARK_BASE_URL
-$env:OPENAI_API_KEY = $env:MEMMARK_API_KEY
-$env:OPENAI_MODEL = $env:MEMMARK_MODEL
+# 2. 评估模型配置 (OpenRouter GPT-4o)
+$env:OPENROUTER_API_KEY = "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"
+$env:OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+$env:OPENROUTER_MODEL = "openai/gpt-4o"
+$env:OPENROUTER_TIMEOUT = "30"
 
-$env:TARGET_LLM_BASE = $env:MEMMARK_BASE_URL
-$env:TARGET_LLM_MODEL = $env:MEMMARK_MODEL
-
-$env:LONGMEMEVAL_JUDGE_BASE_URL = "https://openrouter.ai/api/v1"
-$env:LONGMEMEVAL_JUDGE_MODEL = "gpt-4o"
-$env:LONGMEMEVAL_JUDGE_API_KEY = "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"
-
+# 3. 基础路径配置
 $env:MEMMARK_KEY = "memmark-research-key-please-rotate"
 $env:LONGMEMEVAL_ROOT = "C:\桌面\agent-mem\LongMemEval"
 $env:LONGMEMEVAL_PATH = "$env:LONGMEMEVAL_ROOT\data\longmemeval_s.json"
 
-python -c "from memmark.llm import OpenAIChatClient; c=OpenAIChatClient(); print(c.model); print(repr(c.complete([{'role':'user','content':'Return OK only'}], max_tokens=20)))"
+# 验证生成模型连通性
+python -c "from memmark.llm import OpenAIChatClient; c=OpenAIChatClient(); print(f'Generation Model: {c.model}'); print(repr(c.complete([{'role':'user','content':'OK'}], max_tokens=10)))"
 
+# 运行 LongMemEval 集成流程
 python -m memmark.examples.run_longmemeval `
     --input $env:LONGMEMEVAL_PATH `
     --backend amem `
@@ -30,9 +29,5 @@ python -m memmark.examples.run_longmemeval `
     --max-context-chars 12000 `
     --rq-metrics `
     --longmemeval-root $env:LONGMEMEVAL_ROOT `
-    --judge-model $env:LONGMEMEVAL_JUDGE_MODEL `
-    --judge-base-url $env:LONGMEMEVAL_JUDGE_BASE_URL `
-    --judge-api-key $env:LONGMEMEVAL_JUDGE_API_KEY `
-    --judge-provider-model "openai/gpt-4o" `
     --progress `
     --output-dir ".\results\longmemeval\deepseek_v4_flash_v2"

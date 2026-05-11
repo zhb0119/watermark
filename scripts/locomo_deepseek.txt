@@ -18,7 +18,7 @@ python -c "from memmark.llm import OpenAIChatClient; c=OpenAIChatClient(); print
 
 python -m memmark.examples.run_locomo_full `
     --locomo $env:MEMMARK_LOCOMO_PATH `
-    --conversation 1 `
+    --conversation 0 `
     --backend amem `
     --amem-model-name "C:\桌面\models\all-MiniLM-L6-v2" `
     --llm-mode real `
@@ -28,4 +28,4 @@ python -m memmark.examples.run_locomo_full `
     --max-qa 9999 `
     --baselines watermark no_watermark signed_metadata_only random_replace `
     --output-mode metrics `
-    --output ".\results\deepseek_v4_flash\conv1_metrics.json"
+    --output ".\results\deepseek_v4_flash\conv0_metrics.json"

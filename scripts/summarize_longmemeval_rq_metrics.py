@@ -39,6 +39,14 @@ def main() -> None:
     loaded = []
     for path in args.inputs:
         data = json.loads(path.read_text(encoding="utf-8"))
+        
+        # 如果已经是算好的 rq_metrics.json
+        if "rq2_capacity" in data and "rq3_in_record" in data:
+            label = data.get("baseline") or _label_from_path(path)
+            rows.extend(_build_rows_from_precomputed(data, label))
+            continue
+
+        # 否则按旧逻辑尝试从 detail 重建
         label = str(data.get("baseline") or _label_from_path(path))
         secret_key = args.secret_key or (data.get("config") or {}).get("secret_key", "memmark-default-dev-key")
         details = data.get("details") or []
@@ -46,17 +54,74 @@ def main() -> None:
         result = _aggregate_result(data, details, eval_labels)
         loaded.append((label, result, details, eval_labels, secret_key))
 
-    rows.extend(_rq1_rows(loaded))
-    for label, result, _details, _eval_labels, secret_key in loaded:
-        rows.extend(_rq2_rows(label, result))
-        rows.extend(_rq3_rows(label, result, secret_key))
-        rows.extend(_rq4_rows(label, result, secret_key))
-        rows.extend(_rq5_rows(label, result))
+    # 处理需要重算的行
+    if loaded:
+        rows.extend(_rq1_rows(loaded))
+        for label, result, _details, _eval_labels, secret_key in loaded:
+            rows.extend(_rq2_rows(label, result))
+            rows.extend(_rq3_rows(label, result, secret_key))
+            rows.extend(_rq4_rows(label, result, secret_key))
+            rows.extend(_rq5_rows(label, result))
 
     output = args.output or args.inputs[0].with_name("longmemeval_rq_metrics_summary.md")
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(_markdown(rows, args.inputs), encoding="utf-8")
     print(output)
+
+
+def _build_rows_from_precomputed(data: dict[str, Any], label: str) -> list[dict[str, Any]]:
+    rows = []
+    
+    # RQ1
+    rq1 = data.get("rq1_utility") or {}
+    for field in RQ1_FIELDS:
+        rows.append(_row("RQ1 Utility", "overall", "", field, label, rq1.get(field)))
+    eval_info = rq1.get("official_eval") or {}
+    for qtype, metrics in (eval_info.get("by_question_type") or {}).items():
+        rows.append(_row("RQ1 Utility", "qa_by_question_type", f"type={qtype}", "judge_acc", label, metrics.get("accuracy")))
+        rows.append(_row("RQ1 Utility", "qa_by_question_type", f"type={qtype}", "n", label, metrics.get("count")))
+    
+    # RQ2
+    rq2 = data.get("rq2_capacity") or {}
+    for field in RQ2_FIELDS:
+        rows.append(_row("RQ2 Capacity", "overall", "", field, label, (rq2.get("overall") or {}).get(field)))
+    for carrier, metrics in (rq2.get("by_carrier") or {}).items():
+        for metric, value in metrics.items():
+            rows.append(_row("RQ2 Capacity", "by_carrier", f"carrier={carrier}", metric, label, value))
+            
+    # RQ3
+    rq3 = data.get("rq3_in_record") or {}
+    for group, fields in RQ3_GROUPS.items():
+        if group == "r2":
+            for item, metrics in (rq3.get("r2") or {}).items():
+                for field in fields:
+                    rows.append(_row("RQ3 Verification", "r2", item, field, label, metrics.get(field)))
+        elif group == "r3_carrier_breakdown":
+            for carrier, metrics in (rq3.get(group) or {}).items():
+                for field in fields:
+                    rows.append(_row("RQ3 Verification", group, f"carrier={carrier}", field, label, metrics.get(field)))
+        else:
+            metrics = rq3.get(group) or {}
+            for field in fields:
+                rows.append(_row("RQ3 Verification", group, "", field, label, metrics.get(field)))
+
+    # RQ4
+    rq4 = data.get("rq4_robustness") or {}
+    rows.append(_row("RQ4 Robustness", "overall", "", "pre_recovery", label, rq4.get("pre_recovery")))
+    for outcome in rq4.get("outcomes") or []:
+        metrics = dict(outcome)
+        item = f"attack={metrics.get('name')};strength={metrics.get('strength')}"
+        for field in RQ4_FIELDS:
+            rows.append(_row("RQ4 Robustness", "outcomes", item, field, label, metrics.get(field)))
+
+    # RQ5
+    rq5 = data.get("rq5_integrity") or {}
+    for carrier, count in (rq5.get("by_carrier_counts") or {}).items():
+        rows.append(_row("RQ5 Integrity", "by_carrier_counts", f"carrier={carrier}", "count", label, count))
+    for field in RQ5_FIELDS:
+        rows.append(_row("RQ5 Integrity", "overall", "", field, label, rq5.get(field)))
+        
+    return rows
 
 
 def _aggregate_result(data: dict[str, Any], details: list[dict[str, Any]], eval_labels: dict[str, bool]) -> LoCoMoDriverResult:
